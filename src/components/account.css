@@ -1,0 +1,29 @@
+.account-trigger { display: inline-flex; align-items: center; gap: 7px; max-width: 190px; min-height: 33px; padding: 5px 10px; background: #fff; border: 1px solid #e5e0ed; border-radius: 18px; font-size: 11px; color: #645681; }
+.account-trigger > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-initial { width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; background: #efeafa; color: #7059ba; display: inline-grid; place-items: center; font-size: 12px; font-weight: 600; }
+.account-dialog { display: flex; flex-direction: column; gap: 18px; }
+.account-profile { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.account-profile .account-initial { width: 42px; height: 42px; font-size: 18px; }
+.account-profile > div { min-width: 0; overflow-wrap: anywhere; }
+.account-profile strong { font-size: 15px; }
+.account-profile p { margin-top: 5px; font-size: 12px; color: #81798d; }
+.account-intro { display: flex; gap: 14px; align-items: center; color: #7561bb; }
+.account-intro p { font-size: 13px; line-height: 1.8; color: #756b84; }
+.account-actions, .cloud-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.google-login-button { justify-content: center; min-height: 44px; background: #fff; border: 1px solid #d9d3e2; font-size: 13px; }
+.google-login-button:hover { background: #f8f6fc; }
+.account-notice { font-size: 12px; line-height: 1.8; color: #9a7841; background: #fff9ee; border-radius: 8px; padding: 12px; }
+.account-emulator { font-size: 11px; color: #8a6e46; }
+.cloud-banner { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; margin-bottom: 18px; border: 1px solid #e3ddee; background: #f8f5fe; border-radius: 9px; color: #78658e; font-size: 12px; line-height: 1.8; }
+.cloud-banner strong { display: block; margin-bottom: 3px; }
+.planner-content[aria-busy="true"] { opacity: .45; }
+.storage-alert .cloud-actions { flex-shrink: 0; }
+@media (max-width: 540px) {
+  .account-trigger { font-size: 10px; max-width: 115px; padding: 4px 7px; gap: 5px; min-height: 30px; }
+  .account-trigger .account-initial { width: 21px; height: 21px; font-size: 10px; }
+  .cloud-banner { flex-direction: column; align-items: flex-start; font-size: 11px; padding: 12px; }
+  .topbar:has(.account-trigger) { padding: 0 12px; gap: 7px; }
+  .topbar:has(.account-trigger) .topbar-right { gap: 7px; }
+  .topbar:has(.account-trigger) .save-status { font-size: 8px; max-width: 108px; }
+  .topbar:has(.account-trigger) .breadcrumb { font-size: 8px; gap: 4px; }
+}

@@ -1,0 +1,92 @@
+.modal.recurrence-modal {
+  max-width: 480px;
+  border-radius: 36px;
+  background: #e9eef6;
+  color: #25282c;
+}
+.recurrence-modal .modal-header { padding: 31px 34px 0; border: 0; }
+.recurrence-modal .modal-header h2 { font-size: 28px; font-weight: 500; letter-spacing: -.9px; }
+.recurrence-body { padding: 34px 34px 0; display: flex; flex-direction: column; gap: 34px; }
+.recurrence-label { font-size: 17px; font-weight: 400; color: #4b5055; line-height: 1.6; }
+.recurrence-interval-row { display: flex; align-items: center; gap: 12px; }
+.recurrence-interval-row > .recurrence-label { margin-right: 2px; white-space: nowrap; }
+.recurrence-modal .recurrence-input {
+  min-width: 0;
+  height: 54px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #dfe5ed;
+  padding: 10px 13px;
+  color: #303439;
+  font-size: 17px;
+  font-weight: 400;
+}
+.recurrence-modal .recurrence-input:focus { border-color: #0b57d0; }
+.recurrence-modal :is(input, select, button):focus-visible { outline: 3px solid #8fb5ed; outline-offset: 3px; }
+.recurrence-modal .recurrence-input:disabled { opacity: 1; color: #92989f; cursor: not-allowed; -webkit-text-fill-color: #92989f; }
+.recurrence-modal .recurrence-interval { width: 78px; padding-left: 15px; }
+.recurrence-modal .recurrence-unit { width: 100px; padding-left: 20px; }
+.recurrence-weekdays legend { margin-bottom: 20px; }
+.recurrence-days { display: flex; gap: 9px; }
+.recurrence-days button {
+  width: 39px;
+  height: 39px;
+  flex: 0 0 39px;
+  border: none;
+  border-radius: 50%;
+  background: #dde5ef;
+  color: #0b57d0;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 550;
+}
+.recurrence-days button:hover { background: #cddcf2; }
+.recurrence-days button[aria-pressed="true"] { background: #0b57d0; color: #fff; }
+.recurrence-days button[aria-pressed="true"]:hover { background: #0849b2; }
+.recurrence-monthly { display: flex; flex-direction: column; gap: 12px; }
+.recurrence-monthly select { width: 100%; }
+.recurrence-hint { color: #65707d; font-size: 12px; line-height: 1.8; }
+.recurrence-ending legend { margin-bottom: 17px; }
+.recurrence-end-options { display: flex; flex-direction: column; gap: 7px; }
+.recurrence-end-row { display: grid; grid-template-columns: minmax(105px, 1fr) minmax(0, 222px); gap: 12px; align-items: center; min-height: 54px; }
+.recurrence-radio { display: inline-flex; align-items: center; gap: 13px; font-size: 17px; line-height: 1.5; color: #4b5055; cursor: pointer; }
+.recurrence-radio input { appearance: none; -webkit-appearance: none; display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0; border: 2px solid #555a5d; border-radius: 50%; margin: 0; background: transparent; cursor: pointer; }
+.recurrence-radio input:checked { border-color: #0b57d0; }
+.recurrence-radio input:checked::after { content: ''; width: 14px; height: 14px; background: #0b57d0; border-radius: 50%; }
+.recurrence-end-date { width: 100%; }
+.recurrence-end-date::-webkit-calendar-picker-indicator { width: 15px; margin-left: 0; padding: 0; }
+.recurrence-end-date:disabled::-webkit-calendar-picker-indicator { opacity: .4; }
+.recurrence-count { display: flex; align-items: center; min-width: 0; height: 54px; background: #dfe5ed; border-radius: 6px; padding-right: 15px; gap: 4px; }
+.recurrence-count .recurrence-input { flex: 1; width: 100%; text-align: center; }
+.recurrence-count > span { flex-shrink: 0; color: #4b5055; font-size: 16px; }
+.recurrence-count.is-disabled > span { color: #92989f; }
+.recurrence-error { margin-top: -14px; }
+.recurrence-actions { display: flex; justify-content: flex-end; gap: 20px; padding: 33px 34px 30px; }
+.recurrence-actions button { display: inline-flex; align-items: center; justify-content: center; min-height: 54px; border: 0; border-radius: 28px; font-size: 17px; font-weight: 550; }
+.recurrence-cancel { min-width: 65px; padding: 10px 13px; color: #0b57d0; background: transparent; }
+.recurrence-cancel:hover { background: #dce6f5; }
+.recurrence-confirm { min-width: 102px; padding: 12px 25px; color: #fff; background: #0b57d0; }
+.recurrence-confirm:hover { background: #0849b2; }
+
+@media (max-width: 540px) {
+  .modal.recurrence-modal { border-radius: 28px; }
+  .recurrence-modal .modal-header { padding: 26px 24px 0; }
+  .recurrence-modal .modal-header h2 { font-size: 25px; }
+  .recurrence-body { padding: 28px 24px 0; gap: 28px; }
+  .recurrence-label, .recurrence-radio, .recurrence-modal .recurrence-input { font-size: 15px; }
+  .recurrence-interval-row { gap: 10px; }
+  .recurrence-modal .recurrence-interval { width: 72px; }
+  .recurrence-modal .recurrence-unit { width: 92px; }
+  .recurrence-days { gap: 7px; }
+  .recurrence-days button { width: 34px; height: 34px; flex-basis: 34px; font-size: 13px; }
+  .recurrence-end-row { grid-template-columns: 92px minmax(0, 1fr); gap: 9px; }
+  .recurrence-radio { gap: 10px; }
+  .recurrence-radio input { width: 25px; height: 25px; }
+  .recurrence-modal .recurrence-end-date { padding: 10px 7px; font-size: 14px; }
+  .recurrence-count { padding-right: 10px; gap: 0; }
+  .recurrence-count > span { font-size: 14px; }
+  .recurrence-count .recurrence-input { padding: 10px 5px; }
+  .recurrence-actions { gap: 16px; padding: 28px 24px 25px; }
+  .recurrence-actions button { font-size: 16px; min-height: 50px; }
+  .recurrence-confirm { min-width: 94px; }
+}

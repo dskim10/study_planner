@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function validPlanner(data) {
+      return data is map
+        && data.keys().hasAll(['version', 'categories', 'events', 'goals', 'isDemo'])
+        && data.keys().hasOnly(['version', 'categories', 'events', 'goals', 'isDemo', 'hiddenCategoryIds'])
+        && data.version == 3
+        && data.categories is list
+        && data.events is list
+        && (data.categories.size() > 0 || data.events.size() == 0)
+        && data.goals is list
+        && data.isDemo is bool
+        && (!('hiddenCategoryIds' in data) || data.hiddenCategoryIds is list);
+    }
+
+    function validEnvelope(uid) {
+      let incoming = request.resource.data;
+      return incoming.keys().hasAll(['ownerId', 'revision', 'data', 'updatedAt'])
+        && incoming.keys().hasOnly(['ownerId', 'revision', 'data', 'updatedAt'])
+        && incoming.ownerId == uid
+        && incoming.revision is int && incoming.revision > 0
+        && incoming.revision <= 9007199254740991
+        && incoming.updatedAt is timestamp && incoming.updatedAt == request.time
+        && validPlanner(incoming.data);
+    }
+
+    match /users/{uid}/planner/main {
+      allow get: if isOwner(uid);
+      allow create: if isOwner(uid) && validEnvelope(uid)
+        && request.resource.data.revision == 1;
+      allow update: if isOwner(uid) && validEnvelope(uid)
+        && resource.data.ownerId == uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.revision == resource.data.revision + 1;
+      allow list, delete: if false;
+    }
+
+    // No other profile, account, or planner paths are exposed to the client.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

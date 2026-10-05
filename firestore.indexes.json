@@ -1,0 +1,6 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "planner", "fieldPath": "data", "indexes": [] }
+  ]
+}

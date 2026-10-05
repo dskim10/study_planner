@@ -1,0 +1,4 @@
+.event-custom-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 13px; background: #f4f2fa; border: 1px solid #e9e1f2; border-radius: 9px; }
+.event-custom-summary p { display: flex; align-items: flex-start; gap: 8px; color: #75628e; font-size: 12px; line-height: 1.8; flex: 1; min-width: 150px; }
+.event-custom-summary p svg { margin-top: 3px; }
+.event-custom-summary .button { font-size: 11px; }

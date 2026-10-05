@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "rocky-study-planner-6c82f1"
+  },
+  "targets": {
+    "rocky-study-planner-6c82f1": {
+      "hosting": {
+        "rocky": [
+          "my-rocky"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

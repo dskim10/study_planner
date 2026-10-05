@@ -1,0 +1,39 @@
+{
+  "name": "study-planner",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "overrides": {
+    "@firebase/firestore": { "@grpc/grpc-js": "^1.14.5" }
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "dev:emulator": "node scripts/dev-emulator.mjs",
+    "emulators": "node scripts/run-firebase.mjs start",
+    "test:firebase": "node scripts/run-firebase.mjs test",
+    "test:firebase:run": "node --import tsx --test tests/firebase.integration.mjs && playwright test --config playwright.firebase.config.ts"
+  },
+  "dependencies": {
+    "firebase": "^12.19.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "firebase-tools": "^15.32.1",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.9",
+    "vitest": "^4.1.11"
+  }
+}
