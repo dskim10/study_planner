@@ -70,6 +70,18 @@ export function addSubject(state: PlannerState, name: string): PlannerState {
   return syncSubjectCategories({ ...state, subjects: [...subjects, name.trim()], isDemo: false });
 }
 
+/** Move within the complete list so filtered or other-week subjects are preserved. */
+export function moveSubject(state: PlannerState, sourceName: string, targetName: string): PlannerState {
+  const subjects = getSubjects(state);
+  const source = subjects.findIndex(subject => normalizeSubjectName(subject) === normalizeSubjectName(sourceName));
+  const target = subjects.findIndex(subject => normalizeSubjectName(subject) === normalizeSubjectName(targetName));
+  if (source < 0 || target < 0) throw new Error('과목 목록이 변경되었어요. 이동할 과목을 다시 선택해 주세요.');
+  if (source === target) return state;
+  const [subject] = subjects.splice(source, 1);
+  subjects.splice(target, 0, subject);
+  return { ...state, subjects, isDemo: false };
+}
+
 /** Preserve the linked category's identity, or merge schedules into an existing destination. */
 export function renameSubject(state: PlannerState, oldName: string, newName: string): PlannerState {
   const subjects = getSubjects(state);

@@ -2,10 +2,64 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_SUBJECTS } from '../types';
 import { createDemoState, createEmptyState, getStudyPlanSummary, getWeekSummary } from './planner';
 import { isPlannerState, readPlannerState } from './storage';
-import { addSubject, getSubjectError, getSubjects, isSubjectCategory, normalizeSubjectName, removeSubject, renameSubject, syncSubjectCategories } from './subjects';
+import { addSubject, getSubjectError, getSubjects, isSubjectCategory, moveSubject, normalizeSubjectName, removeSubject, renameSubject, syncSubjectCategories } from './subjects';
 import { getCategoryError, removeCategory } from './categories';
 
 describe('registered subjects', () => {
+  it('moves subjects both ways in the full list and preserves schedules, goals, filters and category identities', () => {
+    const state = createDemoState('2026-10-05');
+    state.hiddenCategoryIds = [state.categories[0].id];
+    const before = structuredClone(state);
+    const original = getSubjects(state);
+    const moved = moveSubject(state, original[0], original[2]);
+    expect(moved.subjects).toEqual([original[1], original[2], original[0], ...original.slice(3)]);
+    expect(moved.isDemo).toBe(false);
+    expect(moved.events).toBe(state.events);
+    expect(moved.goals).toBe(state.goals);
+    expect(moved.categories).toBe(state.categories);
+    expect(moved.hiddenCategoryIds).toBe(state.hiddenCategoryIds);
+    expect(state).toEqual(before);
+    expect(moveSubject(moved, original[0], original[1]).subjects).toEqual(original);
+    expect(readPlannerState(JSON.parse(JSON.stringify(moved)))).toEqual(moved);
+    const days = getWeekSummary('2026-10-05', state.events);
+    const firstSummary = getStudyPlanSummary(days, state.categories, original);
+    const nextSummary = getStudyPlanSummary(days, moved.categories, moved.subjects!);
+    expect(nextSummary.plannedMinutes).toBe(firstSummary.plannedMinutes);
+    expect(nextSummary.days).toEqual(firstSummary.days);
+    expect(new Map(nextSummary.subjects.map(item => [item.subject, item.plannedMinutes]))).toEqual(new Map(firstSummary.subjects.map(item => [item.subject, item.plannedMinutes])));
+  });
+
+  it('keeps subjects without visible goals when moving a filtered pair', () => {
+    const state = { ...createEmptyState(), subjects: ['수학', '숨긴 과목', '영어', '다른 주 과목'] };
+    expect(moveSubject(state, '영어', '수학').subjects).toEqual(['영어', '수학', '숨긴 과목', '다른 주 과목']);
+  });
+
+  it('matches normalized names while keeping canonical saved spelling', () => {
+    const state = { ...createEmptyState(), subjects: ['수학', 'English', '독서'] };
+    expect(moveSubject(state, ' ＥＮＧＬＩＳＨ ', ' 수학 ').subjects).toEqual(['English', '수학', '독서']);
+    expect(moveSubject(state, 'ＥＮＧＬＩＳＨ', 'english')).toBe(state);
+  });
+
+  it('rejects stale or empty subject targets without modifying the planner', () => {
+    const state = createEmptyState();
+    const before = structuredClone(state);
+    expect(() => moveSubject(state, '없는 과목', getSubjects(state)[0])).toThrow('다시 선택');
+    expect(() => moveSubject(state, getSubjects(state)[0], '없는 과목')).toThrow('다시 선택');
+    expect(() => moveSubject({ ...state, subjects: [] }, '수학', '영어')).toThrow();
+    expect(state).toEqual(before);
+  });
+
+  it('materializes legacy subject order while preserving every week of goals', () => {
+    const state = createDemoState('2026-10-05');
+    delete state.subjects;
+    state.goals.push({ ...state.goals[0], id: 'legacy-next-week', weekStart: '2026-10-12', subject: '독서' });
+    const original = getSubjects(state);
+    const moved = moveSubject(state, '독서', original[0]);
+    expect(moved.subjects).toEqual(['독서', ...original.filter(subject => subject !== '독서')]);
+    expect(moved.goals).toBe(state.goals);
+    expect(state.subjects).toBeUndefined();
+  });
+
   it('synchronizes missing categories deterministically and idempotently, keeping inputs unchanged', () => {
     const original = { ...createEmptyState(), categories: [], subjects: ['수학', 'Reading', '\ud800'] };
     const before = structuredClone(original);

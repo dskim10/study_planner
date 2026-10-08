@@ -12,7 +12,7 @@ import {
 import { createFirebaseBackend } from '../src/lib/firebase.ts';
 import { createEmptyState } from '../src/lib/planner.ts';
 import { removeCategory, updateCategoryColor } from '../src/lib/categories.ts';
-import { addSubject, renameSubject, removeSubject, syncSubjectCategories } from '../src/lib/subjects.ts';
+import { addSubject, moveSubject, renameSubject, removeSubject, syncSubjectCategories } from '../src/lib/subjects.ts';
 import { DEFAULT_EVENT_CATEGORIES, DEFAULT_SUBJECTS } from '../src/types.ts';
 
 const projectId = 'demo-rocky';
@@ -304,6 +304,46 @@ describe('Firebase emulator integration', { concurrency: false, timeout: 120_000
     assert.deepEqual(empty.goals, []);
     assert.deepEqual(empty.events, original.events);
     assert.deepEqual(empty.categories, renamed.categories);
+  });
+
+  it('restores reordered subjects after account switching and on a new device without changing planner content', async () => {
+    const ownerSubject = `google-subject-order-${runId}`;
+    const otherSubject = `google-subject-order-other-${runId}`;
+    const first = await makeClient(ownerSubject);
+    const uid = first.auth.currentUser.uid;
+    const other = await makeClient(otherSubject);
+    const otherUid = other.auth.currentUser.uid;
+    const original = completePlanner();
+    const originalCopy = structuredClone(original);
+    const otherData = completePlanner();
+    otherData.events[0].title = '다른 계정의 독서 모임';
+    otherData.goals[0].range = '다른 계정의 목표 범위';
+    await first.backend.save(uid, original, 0);
+    await other.backend.save(otherUid, otherData, 0);
+
+    const reordered = moveSubject(original, '한국사', '수학');
+    const expected = { ...originalCopy, subjects: ['국어', '한국사', '수학', '영어', '과학', '사회'], isDemo: false };
+    assert.deepEqual(reordered, expected);
+    assert.deepEqual(original, originalCopy);
+    assert.deepEqual(await first.backend.save(uid, reordered, 1), { data: expected, revision: 2 });
+    const stored = await getDocFromServer(doc(first.db, 'users', uid, 'planner', 'main'));
+    assert.deepEqual(stored.data().data, expected);
+
+    await first.backend.logout();
+    assert.equal(first.auth.currentUser, null);
+    await signInWithCredential(first.auth, GoogleAuthProvider.credential(unsignedGoogleToken(otherSubject)));
+    assert.equal(first.auth.currentUser.uid, otherUid);
+    assert.deepEqual(await first.backend.load(otherUid), { data: otherData, revision: 1 });
+    await assert.rejects(first.backend.load(uid), { code: 'permission-denied' });
+    await first.backend.logout();
+    await signInWithCredential(first.auth, GoogleAuthProvider.credential(unsignedGoogleToken(ownerSubject)));
+    assert.equal(first.auth.currentUser.uid, uid);
+    assert.deepEqual(await first.backend.load(uid), { data: expected, revision: 2 });
+
+    const newDevice = await makeClient(ownerSubject);
+    assert.notEqual(newDevice.db, first.db);
+    assert.deepEqual(await newDevice.backend.load(uid), { data: expected, revision: 2 });
+    assert.deepEqual(await other.backend.load(otherUid), { data: otherData, revision: 1 });
   });
 
   it('repairs missing subject categories consistently across SDK instances and saves the same IDs and colors', async () => {

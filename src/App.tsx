@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowDownToLine, ArrowRight, CalendarDays, Check, CheckCheck, ChevronLeft, ChevronRight, CircleHelp, Clock3, Coffee, Layers3, ListTodo, LockKeyhole, Plus, RotateCcw, Settings2, Sparkles, Target, X } from 'lucide-react';
 import type { EventCategory, ScheduleEvent, StudyGoal } from './types';
 import { addDays, createDemoState, createEmptyState, formatDuration, getStudyPlanSummary, getWeekSummary, parseDate, startOfWeek, toDateKey } from './lib/planner';
-import { addSubject, getSubjects, isSubjectCategory, removeSubject, renameSubject } from './lib/subjects';
+import { addSubject, getSubjects, isSubjectCategory, moveSubject, removeSubject, renameSubject } from './lib/subjects';
 import { usePlanner } from './hooks/usePlanner';
 import { getCategoryError, removeCategory, updateCategoryColor } from './lib/categories';
 import CalendarView from './components/CalendarView';
@@ -119,6 +119,14 @@ export default function App() {
       return error instanceof Error ? error.message : '과목을 삭제하지 못했어요.';
     }
   }
+  function changeSubjectOrder(source: string, target: string): string | null {
+    try {
+      if (!setData(previous => moveSubject(previous, source, target))) return '지금은 변경할 수 없어요. 저장 상태를 확인해 주세요.';
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : '과목 순서를 저장하지 못했어요.';
+    }
+  }
   function deleteCategory(id: string, replacementId?: string): string | null {
     try {
       if (!setData(previous => removeCategory(previous, id, replacementId))) return '지금은 변경할 수 없어요. 저장 상태를 확인해 주세요.';
@@ -175,7 +183,7 @@ export default function App() {
         {page === 'calendar' ? <>
           <StudyTimeSummary summary={studyPlan} />
           <CalendarView key={account?.uid ?? 'guest'} weekStart={weekStart} days={days} events={data.events} categories={data.categories} subjects={subjects} hiddenCategoryIds={hiddenCategoryIds} disabled={readOnly} onToggleCategory={toggleCategory} onAddCategory={() => setCategoryDialogOpen(true)} onChangeCategoryColor={changeCategoryColor} onDeleteCategory={setDeletingCategoryId} onAddEvent={(date, time, endTime) => setEditor({ date: date ?? weekStart, time, endTime })} onEditEvent={event => setEditor({ event, date: event.date })} onWeekChange={setWeekStart} />
-        </> : <WeeklyGoals key={account?.uid ?? 'guest'} weekStart={weekStart} days={days} goals={data.goals} subjects={subjects} studyPlan={studyPlan} onAddSubject={name => saveSubject(name)} onRenameSubject={(oldName, name) => saveSubject(name, oldName)} onDeleteSubject={deleteSubject} onSaveGoal={saveGoal} onDeleteGoal={id => { setData(prev => ({ ...prev, goals: prev.goals.filter(goal => goal.id !== id) })); setToast('학습 목표를 삭제했어요.'); }} onToggleGoal={id => setData(prev => ({ ...prev, goals: prev.goals.map(goal => goal.id === id ? { ...goal, completed: !goal.completed } : goal) }))} />}
+        </> : <WeeklyGoals key={account?.uid ?? 'guest'} weekStart={weekStart} days={days} goals={data.goals} subjects={subjects} studyPlan={studyPlan} disabled={readOnly} onMoveSubject={changeSubjectOrder} onAddSubject={name => saveSubject(name)} onRenameSubject={(oldName, name) => saveSubject(name, oldName)} onDeleteSubject={deleteSubject} onSaveGoal={saveGoal} onDeleteGoal={id => { setData(prev => ({ ...prev, goals: prev.goals.filter(goal => goal.id !== id) })); setToast('학습 목표를 삭제했어요.'); }} onToggleGoal={id => setData(prev => ({ ...prev, goals: prev.goals.map(goal => goal.id === id ? { ...goal, completed: !goal.completed } : goal) }))} />}
         <footer className="content-footer"><div><span className="free-dot" /><span>자습 가능 시간 = 하루 24시간(00:00–24:00) − 등록된 일정 · 수면·식사·휴식도 개인 일정으로 등록해 주세요.</span></div><span>ONE STEP, EVERY DAY.</span></footer>
         {page === 'calendar' && <a className="plan-prompt" href="#plan"><span className="prompt-icon"><ListTodo size={22} /></span><div><strong>빈 시간을 찾았다면, 이번 주 목표를 세워 볼까요?</strong><p>과목별 학습자료와 공부할 범위를 적어 나만의 계획을 완성해요.</p></div><span className="prompt-cta">주간 계획 세우기<ArrowRight size={17} /></span></a>}
         </div>

@@ -5,6 +5,7 @@ import { CloudError } from './cloud';
 import { createDemoState, createEmptyState } from './planner';
 import { ACCOUNT_STORAGE_PREFIX, PlannerStore } from './planner-store';
 import { readPlannerState, STORAGE_KEY } from './storage';
+import { moveSubject } from './subjects';
 import { DEFAULT_EVENT_CATEGORIES } from '../types';
 
 class MemoryStorage implements Storage {
@@ -161,6 +162,43 @@ describe('planner account persistence', () => {
     expect(backend.documents.get('a')?.data.events[0].title).toBe('account edit');
     backend.emit('a'); await settle();
     expect(store.getSnapshot().data.events[0].title).toBe('account edit');
+  });
+
+  it('flushes subject order on logout and restores it without changing guest or another account data', async () => {
+    const storage = new MemoryStorage();
+    const guest = moveSubject(plan('guest only'), '영어', '국어');
+    storage.setItem(STORAGE_KEY, JSON.stringify(guest));
+    const original = {
+      ...plan('account A only'),
+      hiddenCategoryIds: ['school'],
+      goals: [{ id: 'math-goal', weekStart: '2026-10-05', subject: '수학', material: '수학 개념서', range: '수열 1–20번', completed: true }],
+    };
+    const originalCopy = structuredClone(original);
+    const other = plan('account B only');
+    const { store, backend } = setup(storage);
+    backend.documents.set('a', { data: original, revision: 3 });
+    backend.documents.set('b', { data: other, revision: 7 });
+    backend.emit('a'); await settle();
+    expect(store.setData(data => moveSubject(data, '한국사', '수학'))).toBe(true);
+    const expected = { ...originalCopy, subjects: ['국어', '한국사', '수학', '영어', '과학', '사회'], isDemo: false };
+    expect(store.getSnapshot().data).toEqual(expected);
+    expect(JSON.parse(storage.getItem(ACCOUNT_STORAGE_PREFIX + 'a')!)).toEqual({ data: expected, revision: 3, dirty: true });
+    expect(original).toEqual(originalCopy);
+
+    await store.logout();
+    expect(backend.documents.get('a')).toEqual({ data: expected, revision: 4 });
+    expect(store.getSnapshot().data).toEqual(guest);
+    expect(JSON.parse(storage.getItem(STORAGE_KEY)!)).toEqual(guest);
+    backend.emit('b'); await settle();
+    expect(store.getSnapshot().data).toEqual(other);
+    expect(JSON.parse(storage.getItem(ACCOUNT_STORAGE_PREFIX + 'b')!)).toEqual({ data: other, revision: 7, dirty: false });
+    expect(backend.documents.get('b')).toEqual({ data: other, revision: 7 });
+    backend.emit('a'); await settle();
+    expect(store.getSnapshot()).toMatchObject({ data: expected, status: 'ready', dirty: false, readOnly: false });
+    expect(JSON.parse(storage.getItem(ACCOUNT_STORAGE_PREFIX + 'a')!)).toEqual({ data: expected, revision: 4, dirty: false });
+    expect(backend.save).toHaveBeenCalledTimes(1);
+    expect(backend.save).toHaveBeenCalledWith('a', expected, 3);
+    expect(JSON.parse(storage.getItem(STORAGE_KEY)!)).toEqual(guest);
   });
 
   it('imports guest subject customizations into a new account, including an intentionally empty list', async () => {

@@ -1,10 +1,14 @@
-import { useRef, useState, type FormEvent } from 'react';
-import { ArrowUpRight, BookOpen, Check, CheckCheck, CircleCheck, Clock3, ListTodo, Pencil, Plus, Settings2, Sparkles, Trash2 } from 'lucide-react';
+import { useId, useRef, useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
+import { ArrowUpRight, BookOpen, Check, CheckCheck, CircleCheck, Clock3, GripVertical, ListTodo, Pencil, Plus, Printer, Settings2, Sparkles, Trash2 } from 'lucide-react';
 import type { DaySummary, StudyGoal, StudyPlanSummary } from '../types';
+import { DEFAULT_SUBJECTS } from '../types';
 import { formatDuration, parseDate } from '../lib/planner';
 import { normalizeSubjectName } from '../lib/subjects';
 import Modal from './Modal';
 import SubjectManager from './SubjectManager';
+import GoalPrintPreview from './GoalPrintPreview';
+import useSubjectReorder from '../hooks/useSubjectReorder';
 import './goals.css';
 
 export interface WeeklyGoalsProps {
@@ -19,10 +23,19 @@ export interface WeeklyGoalsProps {
   onAddSubject: (name: string) => string | null;
   onRenameSubject: (oldName: string, newName: string) => string | null;
   onDeleteSubject: (name: string, replacement?: string) => string | null;
+  onMoveSubject: (source: string, target: string) => string | null;
+  disabled?: boolean;
 }
 
 const WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const SUBJECT_COLORS = ['purple', 'blue', 'green', 'orange', 'pink', 'slate'];
+
+function subjectColor(subject: string): string {
+  const normalized = normalizeSubjectName(subject);
+  const defaultIndex = DEFAULT_SUBJECTS.findIndex(name => normalizeSubjectName(name) === normalized);
+  const hash = Array.from(normalized).reduce((value, character) => (Math.imul(value, 31) + character.codePointAt(0)!) >>> 0, 0);
+  return SUBJECT_COLORS[(defaultIndex >= 0 ? defaultIndex : hash) % SUBJECT_COLORS.length];
+}
 
 function GoalEditor({ goal, subjects, onSave, onClose }: {
   goal: StudyGoal;
@@ -76,18 +89,23 @@ function GoalEditor({ goal, subjects, onSave, onClose }: {
   );
 }
 
-export default function WeeklyGoals({ weekStart, goals, days, subjects, studyPlan, onSaveGoal, onDeleteGoal, onToggleGoal, onAddSubject, onRenameSubject, onDeleteSubject }: WeeklyGoalsProps) {
+export default function WeeklyGoals({ weekStart, goals, days, subjects, studyPlan, onSaveGoal, onDeleteGoal, onToggleGoal, onAddSubject, onRenameSubject, onDeleteSubject, onMoveSubject, disabled = false }: WeeklyGoalsProps) {
   const [editingGoal, setEditingGoal] = useState<StudyGoal | null>(null);
   const [isNewGoal, setIsNewGoal] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [deletingGoal, setDeletingGoal] = useState<StudyGoal | null>(null);
   const [subjectDialog, setSubjectDialog] = useState<{ initialMode: 'list' | 'add'; continueWithGoal: boolean } | null>(null);
+  const [printOpen, setPrintOpen] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
   const addButtonRef = useRef<HTMLButtonElement>(null);
+  const reorderHintId = useId();
   const weekGoals = goals.filter(goal => goal.weekStart === weekStart);
   const completedCount = weekGoals.filter(goal => goal.completed).length;
   const availableMinutes = days.reduce((total, day) => total + day.availableMinutes, 0);
   const visibleGoals = weekGoals.filter(goal => filter === 'all' || (filter === 'completed' ? goal.completed : !goal.completed));
+  const visibleSubjectNames = new Set(visibleGoals.map(goal => normalizeSubjectName(goal.subject)));
+  const visibleSubjects = subjects.filter(subject => visibleSubjectNames.has(normalizeSubjectName(subject)));
+  const reorder = useSubjectReorder({ subjects, visibleSubjects, contextKey: `${weekStart}:${filter}`, disabled: disabled || Boolean(editingGoal || deletingGoal || subjectDialog || printOpen), onMoveSubject });
   const maximumDailyMinutes = Math.max(...days.map(day => day.availableMinutes), 1);
   const subjectMinutes = new Map(studyPlan.subjects.map(item => [normalizeSubjectName(item.subject), item.plannedMinutes]));
   const dayMinutes = new Map(studyPlan.days.map(day => [day.date, day.plannedMinutes]));
@@ -149,7 +167,7 @@ export default function WeeklyGoals({ weekStart, goals, days, subjects, studyPla
 
       <div className="goal-toolbar">
         <div className="goal-heading-group"><h2>이번 주 학습 목표 <span>{weekGoals.length}</span></h2><p>과목별로 할 일을 나누고, 하나씩 완성해요.</p></div>
-        <button ref={addButtonRef} className="button button-primary" onClick={() => openNew()}><Plus size={17} /> 학습 목표 추가</button>
+        <div className="goal-toolbar-actions"><button type="button" className="button button-secondary" onClick={() => setPrintOpen(true)}><Printer size={16} /> 프린트</button><button ref={addButtonRef} className="button button-primary" onClick={() => openNew()}><Plus size={17} /> 학습 목표 추가</button></div>
       </div>
 
       <div className="goal-progress-panel">
@@ -165,6 +183,10 @@ export default function WeeklyGoals({ weekStart, goals, days, subjects, studyPla
         <span className="goal-budget"><Clock3 size={14} />{formatDuration(availableMinutes)} 더 배정할 수 있어요</span>
       </div>
 
+      {visibleSubjects.length > 0 && <p className="goal-reorder-hint" id={reorderHintId}>과목 옆 손잡이를 끌어 순서를 바꿔요. 모든 주와 프린트에 같은 순서가 적용돼요. 키보드로는 Space로 선택하고 화살표로 이동한 뒤 Enter로 놓을 수 있어요.</p>}
+      <p className="goal-reorder-status" role="status" aria-live="polite" aria-atomic="true">{reorder.announcement}</p>
+      {reorder.error && <p className="goal-form-error goal-reorder-error" role="alert">{reorder.error}</p>}
+
       {visibleGoals.length === 0 ? (
         <section className="goal-empty">
           <span className="goal-empty-icon">{filter === 'pending' && weekGoals.length ? <CheckCheck size={30} /> : <BookOpen size={30} />}</span>
@@ -173,18 +195,21 @@ export default function WeeklyGoals({ weekStart, goals, days, subjects, studyPla
           {weekGoals.length === 0 && <button className="button button-primary" onClick={() => openNew()}><Plus size={16} /> 첫 학습 목표 추가</button>}
         </section>
       ) : (
-        <div className="goal-subject-grid">
-          {subjects.map((subject, subjectIndex) => {
+        <div className="goal-subject-grid" ref={reorder.gridRef}>
+          {subjects.map(subject => {
             const subjectKey = normalizeSubjectName(subject);
             const subjectGoals = visibleGoals.filter(goal => normalizeSubjectName(goal.subject) === subjectKey);
             const allSubjectGoals = weekGoals.filter(goal => normalizeSubjectName(goal.subject) === subjectKey);
             if (!subjectGoals.length) return null;
+            const dragging = reorder.drag?.source === subject;
+            const dropDirection = reorder.drag?.target === subject && reorder.drag.source !== subject ? reorder.direction(reorder.drag.source, subject) : null;
             return (
-              <section key={subject} className={`goal-subject-card goal-color-${SUBJECT_COLORS[subjectIndex % SUBJECT_COLORS.length]}`}>
+              <section key={subject} data-subject-card={subject} className={`goal-subject-card goal-color-${subjectColor(subject)}${dragging ? ' goal-subject-dragging' : ''}${dropDirection ? ` goal-subject-drop-${dropDirection}` : ''}`}>
                 <header className="goal-subject-header">
-                  <div className="goal-subject-name"><span className="goal-subject-icon"><BookOpen size={17} /></span><h3>{subject}</h3><span className="goal-subject-count">{allSubjectGoals.filter(goal => goal.completed).length}/{allSubjectGoals.length}</span></div>
+                  <div className="goal-subject-name"><button type="button" className="icon-button goal-subject-drag-handle" data-subject-handle={subject} aria-label={`${subject} 순서 이동`} aria-describedby={reorderHintId} aria-pressed={dragging} disabled={disabled || visibleSubjects.length < 2} title="손잡이를 끌어 과목 순서 이동" onPointerDown={event => reorder.pointerDown(event, subject)} onPointerMove={reorder.pointerMove} onPointerUp={reorder.pointerUp} onPointerCancel={reorder.pointerCancel} onLostPointerCapture={reorder.pointerCancel} onKeyDown={event => reorder.keyDown(event, subject)} onClick={event => reorder.click(event, subject)} onBlur={reorder.blur}><GripVertical size={17} aria-hidden="true" /></button><span className="goal-subject-icon"><BookOpen size={17} /></span><h3>{subject}</h3><span className="goal-subject-count">{allSubjectGoals.filter(goal => goal.completed).length}/{allSubjectGoals.length}</span></div>
                   <span className="goal-subject-total"><Clock3 size={13} /> 계획 {formatDuration(subjectMinutes.get(subjectKey) ?? 0)}</span>
                 </header>
+                {dropDirection && <span className="goal-reorder-drop-marker" aria-hidden="true">{reorder.drag!.source} · 이 과목 {dropDirection === 'before' ? '앞' : '뒤'}에 놓기</span>}
                 <ul className="goal-list">
                   {subjectGoals.map(goal => (
                     <li key={goal.id} className={`goal-item ${goal.completed ? 'goal-item-completed' : ''}`}>
@@ -202,8 +227,11 @@ export default function WeeklyGoals({ weekStart, goals, days, subjects, studyPla
         </div>
       )}
 
+      {reorder.drag?.mode === 'pointer' && createPortal(<div className="goal-reorder-ghost" aria-hidden="true" style={{ left: Math.max(8, Math.min(reorder.drag.x + 14, window.innerWidth - 212)), top: Math.max(8, Math.min(reorder.drag.y + 14, window.innerHeight - 80)) }}><GripVertical size={17} /><span>{reorder.drag.source}</span></div>, document.body)}
+
       <div className="goal-bottom-note"><ListTodo size={15} /><span>학습 목표의 추가·완료는 시간 계산을 바꾸지 않아요. 남은 배정 시간은 하루 24시간에서 캘린더의 모든 일정을 제외한 자습 가능 시간과 같아요.</span></div>
 
+      {printOpen && <GoalPrintPreview key={weekStart} weekStart={weekStart} goals={goals} subjects={subjects} onClose={() => setPrintOpen(false)} />}
       {editingGoal && <Modal title={isNewGoal ? '새 학습 목표' : '학습 목표 수정'} description="무엇을, 어디까지 공부할지 구체적으로 적어 보세요." onClose={() => setEditingGoal(null)}><GoalEditor goal={editingGoal} subjects={subjects} onSave={saveGoal} onClose={() => setEditingGoal(null)} /></Modal>}
       {subjectDialog && <SubjectManager subjects={subjects} goals={goals} initialMode={subjectDialog.initialMode} onAddSubject={onAddSubject} onRenameSubject={onRenameSubject} onDeleteSubject={onDeleteSubject} onClose={() => setSubjectDialog(null)} onSubjectAdded={subjectDialog.continueWithGoal ? name => { setSubjectDialog(null); openNew(name); } : undefined} />}
       {deletingGoal && <Modal title="학습 목표를 삭제할까요?" onClose={() => setDeletingGoal(null)}><div className="modal-body goal-delete-confirm"><strong>{deletingGoal.subject} · {deletingGoal.material}</strong><p>{deletingGoal.range}</p><span>삭제한 목표는 복구할 수 없어요.</span></div><div className="modal-footer"><button className="button button-secondary" onClick={() => setDeletingGoal(null)}>취소</button><button className="button goal-confirm-delete" onClick={deleteGoal}>목표 삭제</button></div></Modal>}
