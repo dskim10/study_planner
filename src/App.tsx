@@ -46,7 +46,7 @@ export default function App() {
   const { data, setData, error: storageError, readOnly, account } = planner;
   const [page, setPage] = useState(() => location.hash === '#plan' ? 'plan' : 'calendar');
   const [weekStart, setWeekStart] = useState(() => startOfWeek(toDateKey(new Date())));
-  const [editor, setEditor] = useState<{ event?: ScheduleEvent; date: string; time?: string } | null>(null);
+  const [editor, setEditor] = useState<{ event?: ScheduleEvent; date: string; time?: string; endTime?: string } | null>(null);
   const [dataDialogOpen, setDataDialogOpen] = useState(false);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
@@ -174,14 +174,14 @@ export default function App() {
         </section>
         {page === 'calendar' ? <>
           <StudyTimeSummary summary={studyPlan} />
-          <CalendarView key={account?.uid ?? 'guest'} weekStart={weekStart} days={days} events={data.events} categories={data.categories} subjects={subjects} hiddenCategoryIds={hiddenCategoryIds} disabled={readOnly} onToggleCategory={toggleCategory} onAddCategory={() => setCategoryDialogOpen(true)} onChangeCategoryColor={changeCategoryColor} onDeleteCategory={setDeletingCategoryId} onAddEvent={(date, time) => setEditor({ date: date ?? weekStart, time })} onEditEvent={event => setEditor({ event, date: event.date })} onWeekChange={setWeekStart} />
+          <CalendarView key={account?.uid ?? 'guest'} weekStart={weekStart} days={days} events={data.events} categories={data.categories} subjects={subjects} hiddenCategoryIds={hiddenCategoryIds} disabled={readOnly} onToggleCategory={toggleCategory} onAddCategory={() => setCategoryDialogOpen(true)} onChangeCategoryColor={changeCategoryColor} onDeleteCategory={setDeletingCategoryId} onAddEvent={(date, time, endTime) => setEditor({ date: date ?? weekStart, time, endTime })} onEditEvent={event => setEditor({ event, date: event.date })} onWeekChange={setWeekStart} />
         </> : <WeeklyGoals key={account?.uid ?? 'guest'} weekStart={weekStart} days={days} goals={data.goals} subjects={subjects} studyPlan={studyPlan} onAddSubject={name => saveSubject(name)} onRenameSubject={(oldName, name) => saveSubject(name, oldName)} onDeleteSubject={deleteSubject} onSaveGoal={saveGoal} onDeleteGoal={id => { setData(prev => ({ ...prev, goals: prev.goals.filter(goal => goal.id !== id) })); setToast('학습 목표를 삭제했어요.'); }} onToggleGoal={id => setData(prev => ({ ...prev, goals: prev.goals.map(goal => goal.id === id ? { ...goal, completed: !goal.completed } : goal) }))} />}
         <footer className="content-footer"><div><span className="free-dot" /><span>자습 가능 시간 = 하루 24시간(00:00–24:00) − 등록된 일정 · 수면·식사·휴식도 개인 일정으로 등록해 주세요.</span></div><span>ONE STEP, EVERY DAY.</span></footer>
         {page === 'calendar' && <a className="plan-prompt" href="#plan"><span className="prompt-icon"><ListTodo size={22} /></span><div><strong>빈 시간을 찾았다면, 이번 주 목표를 세워 볼까요?</strong><p>과목별 학습자료와 공부할 범위를 적어 나만의 계획을 완성해요.</p></div><span className="prompt-cta">주간 계획 세우기<ArrowRight size={17} /></span></a>}
         </div>
       </main>
     </div>
-    {editor && !readOnly && <EventEditor event={editor.event} date={editor.date} time={editor.time} categories={data.categories} subjects={subjects} onAddCategory={addCategory} onClose={() => setEditor(null)} onSave={saveEvent} onDelete={id => { if (setData(prev => ({ ...prev, events: prev.events.filter(event => event.id !== id) }))) { setEditor(null); setToast('일정을 삭제했어요.'); } }} />}
+    {editor && !readOnly && <EventEditor event={editor.event} date={editor.date} time={editor.time} endTime={editor.endTime} categories={data.categories} subjects={subjects} onAddCategory={addCategory} onClose={() => setEditor(null)} onSave={saveEvent} onDelete={id => { if (setData(prev => ({ ...prev, events: prev.events.filter(event => event.id !== id) }))) { setEditor(null); setToast('일정을 삭제했어요.'); } }} />}
     {categoryDialogOpen && !readOnly && <Modal title="새 일정 종류" description="이름과 색상을 정하면 모든 일정에서 사용할 수 있어요." onClose={() => setCategoryDialogOpen(false)}><div className="modal-body"><CategoryCreator autoFocus={false} onAddCategory={addCategory} onCreated={() => setCategoryDialogOpen(false)} onCancel={() => setCategoryDialogOpen(false)} /></div></Modal>}
     {deletingCategory && !readOnly && <CategoryDeleteDialog key={deletingCategory.id} category={deletingCategory} categories={data.categories} events={data.events} onClose={() => setDeletingCategoryId(null)} onDelete={replacementId => deleteCategory(deletingCategory.id, replacementId)} />}
     {dataDialogOpen && !resetMode && <DataDialog signedIn={!!account} disabled={readOnly && (!!account || !planner.storageBlocked)} onClose={() => setDataDialogOpen(false)} onReset={() => setResetMode('empty')} onDemo={() => setResetMode('demo')} />}

@@ -54,11 +54,15 @@
 .cal-free-slot { position: absolute; left: 0; width: 100%; background: #fcfefd; pointer-events: none; }
 .cal-current-day .cal-free-slot { background: #fafffc; }
 .cal-blocked-day { background: repeating-linear-gradient(135deg, #f9f8fb 0, #f9f8fb 5px, #fbfafc 5px, #fbfafc 10px); }
-.cal-empty-slot { position: absolute; display: flex; width: 100%; height: var(--cal-hour-height, 52px); align-items: center; justify-content: center; border: 0; border-top: 1px solid #efedf4; padding: 0; background: transparent; color: #b2a3de; cursor: pointer; }
-.cal-empty-slot::after { content: ''; position: absolute; top: 50%; left: 0; right: 0; border-top: 1px dashed #f6f4f9; }
-.cal-empty-slot > svg { opacity: 0; }
-.cal-empty-slot:hover, .cal-empty-slot:focus-visible { background: #f3effb99; }
-.cal-empty-slot:hover > svg, .cal-empty-slot:focus-visible > svg { opacity: 1; }
+.cal-empty-slot { position: absolute; display: block; width: 100%; height: calc(var(--cal-hour-height, 52px) / 4); border: 0; padding: 0; background: transparent; cursor: crosshair; touch-action: auto; }
+.cal-empty-slot.cal-hour-slot { border-top: 1px solid #efedf4; }
+.cal-empty-slot.cal-half-hour-slot { border-top: 1px dashed #f6f4f9; }
+.cal-empty-slot:focus-visible { background: #f3effb99; }
+.cal-selection-preview { position: absolute; z-index: 8; left: 3px; right: 3px; border-radius: 5px; background: var(--selection-color); color: var(--selection-text); pointer-events: none; box-shadow: 0 2px 7px #2c25432e; }
+.cal-selection-preview-card { position: absolute; top: 0; left: 0; right: 0; min-height: 44px; padding: 5px 6px; border-radius: 5px; background: var(--selection-color); color: var(--selection-text); }
+.cal-selection-preview-card.cal-selection-preview-bottom { top: auto; bottom: 0; }
+.cal-selection-preview-card strong { display: block; font-size: 11px; font-weight: 700; line-height: 1.5; }
+.cal-selection-preview-card > span { display: block; margin-top: 3px; font-size: 9px; line-height: 1.4; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .cal-event { position: absolute; z-index: 2; display: flex; flex-direction: column; align-items: flex-start; padding: 6px 8px; border: 0; border-left: 2px solid; border-radius: 5px; overflow: hidden; text-align: left; cursor: pointer; transition: filter .15s, box-shadow .15s; min-width: 0; }
 .cal-event:hover { z-index: 4; filter: saturate(1.12); box-shadow: 0 2px 7px #3a36531a; }
 .cal-event-color { background: color-mix(in srgb, var(--event-color) 16%, white); color: color-mix(in srgb, var(--event-color) 35%, #242234); border-left-color: var(--event-color); }

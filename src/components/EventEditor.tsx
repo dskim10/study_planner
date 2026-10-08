@@ -10,10 +10,10 @@ import CategoryCreator from './CategoryCreator';
 import CustomRecurrenceDialog from './CustomRecurrenceDialog';
 import './event-editor.css';
 
-interface Props { event?: ScheduleEvent; date: string; time?: string; categories: EventCategory[]; subjects: string[]; onAddCategory: (category: EventCategory) => string | null; onSave: (event: ScheduleEvent) => void; onDelete: (id: string) => void; onClose: () => void }
+interface Props { event?: ScheduleEvent; date: string; time?: string; endTime?: string; categories: EventCategory[]; subjects: string[]; onAddCategory: (category: EventCategory) => string | null; onSave: (event: ScheduleEvent) => void; onDelete: (id: string) => void; onClose: () => void }
 
-export default function EventEditor({ event, date, time = '09:00', categories, subjects, onAddCategory, onSave, onDelete, onClose }: Props) {
-  const [draft, setDraft] = useState<ScheduleEvent>(() => event ?? { id: crypto.randomUUID(), title: '', type: categories[0]?.id ?? '', date, startTime: time, endTime: minutesToTime(Math.min(timeToMinutes(time) + 60, 1440)), allDay: false, recurrence: 'none', weekdays: [parseDate(date).getDay()] });
+export default function EventEditor({ event, date, time = '09:00', endTime, categories, subjects, onAddCategory, onSave, onDelete, onClose }: Props) {
+  const [draft, setDraft] = useState<ScheduleEvent>(() => event ?? { id: crypto.randomUUID(), title: '', type: categories[0]?.id ?? '', date, startTime: time, endTime: endTime ?? minutesToTime(Math.min(timeToMinutes(time) + 60, 1440)), allDay: false, recurrence: 'none', weekdays: [parseDate(date).getDay()] });
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [addingCategory, setAddingCategory] = useState(categories.length === 0);

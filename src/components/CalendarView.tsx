@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Info, LockKeyhole, Plus, Repeat2 } from 'lucide-react';
 import { type DaySummary, type EventCategory, type ScheduleEvent } from '../types';
 import {
@@ -16,6 +16,7 @@ import './calendar.css';
 import { getRecurrenceSummary } from '../lib/recurrence';
 import { isSubjectCategory } from '../lib/subjects';
 import CategoryOptions from './CategoryOptions';
+import { CALENDAR_STEP_MINUTES, formatSelectionTimeRange, getPointerMinute, getSelectionRange } from '../lib/calendar-selection';
 
 export interface CalendarViewProps {
   weekStart: string;
@@ -29,13 +30,36 @@ export interface CalendarViewProps {
   onAddCategory: () => void;
   onChangeCategoryColor: (id: string, color: string) => string | null;
   onDeleteCategory: (id: string) => void;
-  onAddEvent: (date?: string, time?: string) => void;
+  onAddEvent: (date?: string, time?: string, endTime?: string) => void;
   onEditEvent: (event: ScheduleEvent) => void;
   onWeekChange: (weekStart: string) => void;
 }
 
 const WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const HOUR_HEIGHT = 52;
+
+interface SelectionGesture {
+  pointerId: number;
+  date: string;
+  weekStart: string;
+  column: HTMLDivElement;
+  anchor: number;
+  startX: number;
+  startY: number;
+  currentY: number;
+  dragging: boolean;
+  previousUserSelect: string;
+}
+
+interface SelectionPreview { date: string; start: number; end: number }
+
+function selectionTextColor(color: string): string {
+  const values = [1, 3, 5].map(offset => {
+    const value = Number.parseInt(color.slice(offset, offset + 2), 16) / 255;
+    return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4;
+  });
+  return values[0] * .2126 + values[1] * .7152 + values[2] * .0722 > .179 ? '#000000' : '#FFFFFF';
+}
 
 interface PositionedEvent {
   event: ScheduleEvent;
@@ -86,9 +110,117 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
   const [view, setView] = useState<'week' | 'month'>('week');
   const [now, setNow] = useState(() => new Date());
   const [activeSlot, setActiveSlot] = useState<{ date: string; minute: number } | null>(null);
+  const [selection, setSelection] = useState<SelectionPreview | null>(null);
+  const gestureRef = useRef<SelectionGesture | null>(null);
+  const lastPointerType = useRef('mouse');
+  // Ignore the released gesture's compatibility click until a fresh pointer press.
+  const suppressPointerClick = useRef(false);
   const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const hiddenCategories = useMemo(() => new Set(hiddenCategoryIds), [hiddenCategoryIds]);
   const hasSubjectCategories = categories.some(category => isSubjectCategory(category, subjects));
+  const selectionColor = categories[0]?.color ?? '#419f9b';
+
+  const clearGesture = useCallback(() => {
+    const gesture = gestureRef.current;
+    gestureRef.current = null;
+    setSelection(null);
+    if (!gesture) return null;
+    suppressPointerClick.current = true;
+    document.body.style.userSelect = gesture.previousUserSelect;
+    if (gesture.column.hasPointerCapture(gesture.pointerId)) gesture.column.releasePointerCapture(gesture.pointerId);
+    return gesture;
+  }, []);
+
+  useEffect(() => {
+    clearGesture();
+    return () => { clearGesture(); };
+  }, [weekStart, view, disabled, clearGesture]);
+
+  useEffect(() => {
+    const cancel = () => { clearGesture(); };
+    const keydown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape' && gestureRef.current) {
+        event.preventDefault();
+        clearGesture();
+      }
+    };
+    const scroll = () => {
+      const gesture = gestureRef.current;
+      if (!gesture?.dragging) return;
+      const rect = gesture.column.getBoundingClientRect();
+      setSelection({ date: gesture.date, ...getSelectionRange(gesture.anchor, getPointerMinute(gesture.currentY, rect.top, rect.height, true)) });
+    };
+    window.addEventListener('blur', cancel);
+    window.addEventListener('scroll', scroll, true);
+    document.addEventListener('keydown', keydown);
+    return () => {
+      window.removeEventListener('blur', cancel);
+      window.removeEventListener('scroll', scroll, true);
+      document.removeEventListener('keydown', keydown);
+    };
+  }, [clearGesture]);
+
+  function beginSelection(event: PointerEvent<HTMLDivElement>, date: string) {
+    lastPointerType.current = event.pointerType;
+    if (event.isPrimary && event.button === 0) suppressPointerClick.current = false;
+    if (disabled || event.pointerType !== 'mouse' || !event.isPrimary || event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('.cal-event') || (target !== event.currentTarget && !target.closest('.cal-empty-slot'))) return;
+    clearGesture();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const anchor = getPointerMinute(event.clientY, rect.top, rect.height);
+    event.preventDefault();
+    event.currentTarget.querySelector<HTMLButtonElement>(`[data-slot-minute="${anchor}"]`)?.focus({ preventScroll: true });
+    gestureRef.current = { pointerId: event.pointerId, date, weekStart, column: event.currentTarget, anchor, startX: event.clientX, startY: event.clientY, currentY: event.clientY, dragging: false, previousUserSelect: document.body.style.userSelect };
+    document.body.style.userSelect = 'none';
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveSelection(event: PointerEvent<HTMLDivElement>) {
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (!(event.buttons & 1)) { clearGesture(); return; }
+    gesture.currentY = event.clientY;
+    if (!gesture.dragging && Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) < 4) return;
+    gesture.dragging = true;
+    const rect = gesture.column.getBoundingClientRect();
+    setSelection({ date: gesture.date, ...getSelectionRange(gesture.anchor, getPointerMinute(event.clientY, rect.top, rect.height, true)) });
+  }
+
+  function finishSelection(event: PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const rect = gesture.column.getBoundingClientRect();
+    const dragged = gesture.dragging || Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) >= 4;
+    const range = getSelectionRange(gesture.anchor, getPointerMinute(event.clientY, rect.top, rect.height, true));
+    clearGesture();
+    if (disabled || view !== 'week' || gesture.weekStart !== weekStart) return;
+    if (dragged) onAddEvent(gesture.date, minutesToTime(range.start), minutesToTime(range.end));
+    else onAddEvent(gesture.date, minutesToTime(gesture.anchor));
+  }
+
+  function clickColumn(event: MouseEvent<HTMLDivElement>, date: string) {
+    if (disabled) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('.cal-event')) return;
+    const slot = target.closest<HTMLButtonElement>('.cal-empty-slot');
+    if (event.detail === 0 && slot) {
+      onAddEvent(date, minutesToTime(Number(slot.dataset.slotMinute)));
+      return;
+    }
+    // Mouse clicks are handled once on pointerup; taps retain native touch scrolling.
+    if (lastPointerType.current === 'mouse' || suppressPointerClick.current) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    onAddEvent(date, minutesToTime(getPointerMinute(event.clientY, rect.top, rect.height)));
+  }
+
+  function suppressGestureClick(event: MouseEvent<HTMLDivElement>) {
+    if (event.detail > 0 && suppressPointerClick.current) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
 
   function isEventVisible(event: ScheduleEvent) {
     return !hiddenCategories.has(event.type);
@@ -111,6 +243,7 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
   const firstMinute = 0;
   const lastMinute = 24 * 60;
   const hours = Array.from({ length: (lastMinute - firstMinute) / 60 }, (_, index) => firstMinute + index * 60);
+  const quarterHours = Array.from({ length: (lastMinute - firstMinute) / CALENDAR_STEP_MINUTES }, (_, index) => firstMinute + index * CALENDAR_STEP_MINUTES);
   const keyboardSlot = activeSlot && days.some((day) => day.date === activeSlot.date) && activeSlot.minute >= firstMinute && activeSlot.minute < lastMinute
     ? activeSlot : { date: days[0]?.date ?? weekStart, minute: firstMinute };
   const gridHeight = hours.length * HOUR_HEIGHT;
@@ -143,12 +276,12 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
   function moveSlot(event: KeyboardEvent<HTMLButtonElement>, date: string, minute: number) {
     let nextDate = date;
     let nextMinute = minute;
-    if (event.key === 'ArrowUp') nextMinute -= 60;
-    else if (event.key === 'ArrowDown') nextMinute += 60;
+    if (event.key === 'ArrowUp') nextMinute -= CALENDAR_STEP_MINUTES;
+    else if (event.key === 'ArrowDown') nextMinute += CALENDAR_STEP_MINUTES;
     else if (event.key === 'ArrowLeft') nextDate = addDays(date, -1);
     else if (event.key === 'ArrowRight') nextDate = addDays(date, 1);
     else if (event.key === 'Home') nextMinute = firstMinute;
-    else if (event.key === 'End') nextMinute = lastMinute - 60;
+    else if (event.key === 'End') nextMinute = lastMinute - CALENDAR_STEP_MINUTES;
     else return;
     event.preventDefault();
     const next = event.currentTarget.closest('.cal-time-grid')?.querySelector<HTMLButtonElement>(`[data-slot-date="${nextDate}"][data-slot-minute="${nextMinute}"]`);
@@ -188,7 +321,7 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
           <span className="cal-legend-free"><i aria-hidden="true" />자습 가능</span>
           <button type="button" className="cal-add-category" onClick={onAddCategory}><Plus size={12} aria-hidden="true" />일정 종류 추가</button>
         </div>
-        <span className="cal-click-hint">빈 시간을 눌러 일정을 추가하세요</span>
+        <span className="cal-click-hint">빈 시간을 누르거나 드래그해 일정을 추가하세요</span>
       </div>
 
       {hasSubjectCategories && <p className="cal-filter-note cal-subject-category-note" id="calendar-subject-category-hint"><LockKeyhole size={12} aria-hidden="true" /><span>과목 종류의 색상은 옵션에서 변경해요. 이름과 삭제는 주간 학습 계획의 과목 관리에서 변경할 수 있어요.</span></p>}
@@ -247,12 +380,12 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
                 const allDay = day.events.some((event) => event.allDay);
                 const positioned = positionEvents(day.events.filter(isEventVisible));
                 return (
-                  <div key={day.date} className={`cal-day-column ${allDay ? 'cal-blocked-day' : ''} ${day.date === today ? 'cal-current-day' : ''}`} style={{ height: gridHeight }}>
+                  <div key={day.date} data-date={day.date} className={`cal-day-column ${allDay ? 'cal-blocked-day' : ''} ${day.date === today ? 'cal-current-day' : ''}`} style={{ height: gridHeight }} onPointerDown={event => beginSelection(event, day.date)} onPointerMove={moveSelection} onPointerUp={finishSelection} onPointerCancel={() => clearGesture()} onLostPointerCapture={() => clearGesture()} onClickCapture={suppressGestureClick} onClick={event => clickColumn(event, day.date)}>
                     {day.freeSlots.map((slot) => (
                       <div key={`${slot.start}-${slot.end}`} className="cal-free-slot" aria-hidden="true" style={{ top: (slot.start - firstMinute) / 60 * HOUR_HEIGHT, height: (slot.end - slot.start) / 60 * HOUR_HEIGHT }} />
                     ))}
-                    {hours.map((minute) => (
-                      <button key={minute} type="button" className="cal-empty-slot" style={{ top: (minute - firstMinute) / 60 * HOUR_HEIGHT }} data-slot-date={day.date} data-slot-minute={minute} tabIndex={keyboardSlot.date === day.date && keyboardSlot.minute === minute ? 0 : -1} onFocus={() => setActiveSlot({ date: day.date, minute })} onKeyDown={(event) => moveSlot(event, day.date, minute)} onClick={() => onAddEvent(day.date, minutesToTime(minute))} aria-label={`${readableDate(day.date)} ${minutesToTime(minute)} 일정 추가`}><Plus size={15} aria-hidden="true" /></button>
+                    {quarterHours.map((minute) => (
+                      <button key={minute} type="button" className={`cal-empty-slot ${minute % 60 === 0 ? 'cal-hour-slot' : minute % 60 === 30 ? 'cal-half-hour-slot' : ''}`} style={{ top: (minute - firstMinute) / 60 * HOUR_HEIGHT }} data-slot-date={day.date} data-slot-minute={minute} tabIndex={keyboardSlot.date === day.date && keyboardSlot.minute === minute ? 0 : -1} onFocus={() => setActiveSlot({ date: day.date, minute })} onKeyDown={(event) => moveSlot(event, day.date, minute)} aria-label={`${readableDate(day.date)} ${minutesToTime(minute)} 일정 추가`} />
                     ))}
                     {positioned.map(({ event, start, end, column, columns }) => (
                       <button
@@ -270,6 +403,7 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
                       </button>
                     ))}
                     {day.date === today && currentMinutes >= firstMinute && currentMinutes < lastMinute && <div className="cal-now-line" style={{ top: (currentMinutes - firstMinute) / 60 * HOUR_HEIGHT }} aria-label={`현재 시각 ${minutesToTime(currentMinutes)}`} />}
+                    {selection?.date === day.date && <div className="cal-selection-preview" role="status" aria-label="새 일정 미리보기" data-selection-start={selection.start} data-selection-end={selection.end} style={{ top: selection.start / 60 * HOUR_HEIGHT, height: (selection.end - selection.start) / 60 * HOUR_HEIGHT, '--selection-color': selectionColor, '--selection-text': selectionTextColor(selectionColor) } as CSSProperties}><div className={`cal-selection-preview-card ${selection.start / 60 * HOUR_HEIGHT + 44 > gridHeight ? 'cal-selection-preview-bottom' : ''}`}><strong>(제목 없음)</strong><span>{formatSelectionTimeRange(selection.start, selection.end)}</span></div></div>}
                   </div>
                 );
               })}
