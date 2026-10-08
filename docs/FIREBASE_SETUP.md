@@ -1,11 +1,11 @@
-# Rocky Firebase 연결 안내
+# Eddie Firebase 연결 안내
 
 2026-10-06 기준 실제 Firebase 프로젝트 연결, 백엔드 및 Firebase Hosting 배포를 완료했습니다.
 
 | 항목 | 연결 상태 |
 | --- | --- |
 | Firebase 프로젝트 | [`rocky-study-planner-6c82f1`](https://console.firebase.google.com/project/rocky-study-planner-6c82f1/overview) |
-| Hosting | [Rocky 앱](https://my-rocky.web.app), 사이트 `my-rocky` · 배포 대상 `rocky` |
+| Hosting | [Eddie 앱](https://eddie-planner.web.app), 사이트 `eddie-planner` · 배포 대상 `rocky` |
 | 웹 앱 ID | `1:1046063414578:web:6d37dadc38baebc435ab2b` |
 | Firestore | `(default)`, Standard edition, 서울 `asia-northeast3` |
 | 인증 | Google 공급자 활성화, `localhost`·`127.0.0.1`·프로젝트 기본 도메인·새 Hosting 도메인 승인 |
@@ -18,8 +18,8 @@
 
 ## 새 프로젝트와 웹 앱 만들기
 
-1. [Firebase Console](https://console.firebase.google.com/)에 로그인하고 새 프로젝트를 만듭니다. 프로젝트 이름은 `Rocky` 등으로 정하고 **프로젝트 ID**를 기록합니다. Google Analytics는 현재 앱 기능에 필요하지 않으므로 선택 사항입니다.
-2. 프로젝트 개요에서 웹 앱 아이콘 `</>`을 선택하고 `Rocky Web` 등의 이름으로 등록합니다.
+1. [Firebase Console](https://console.firebase.google.com/)에 로그인하고 새 프로젝트를 만듭니다. 프로젝트 이름은 `Eddie` 등으로 정하고 **프로젝트 ID**를 기록합니다. Google Analytics는 현재 앱 기능에 필요하지 않으므로 선택 사항입니다.
+2. 프로젝트 개요에서 웹 앱 아이콘 `</>`을 선택하고 `Eddie Web` 등의 이름으로 등록합니다.
 3. 프로젝트 설정 → 일반 → 내 앱 → 웹 앱의 **SDK 설정 및 구성**에서 `firebaseConfig`를 확인합니다. 여기에 표시된 `apiKey`, `authDomain`, `projectId`, `appId`를 사용합니다. [Firebase 웹 앱 등록 안내](https://firebase.google.com/docs/web/setup)
 
 프로젝트 폴더에서 예시 환경 파일을 복사합니다. 이미 `.env.local`이 있다면 필요한 항목만 편집합니다.
@@ -59,7 +59,7 @@ Firebase CLI로도 Google 로그인 공급자를 준비할 수 있습니다. 이
   "auth": {
     "providers": {
       "googleSignIn": {
-        "oAuthBrandDisplayName": "Rocky",
+        "oAuthBrandDisplayName": "Eddie",
         "supportEmail": "프로젝트_관리자_이메일",
         "authorizedRedirectUris": []
       }
@@ -94,11 +94,13 @@ npx firebase deploy --only firestore --project YOUR_PROJECT_ID
 
 ## Firebase Hosting 배포
 
-기본 서비스 주소는 **https://my-rocky.web.app**이며, 보조 주소 **https://my-rocky.firebaseapp.com**에서도 같은 앱을 제공합니다. 두 호스트 모두 Authentication 승인 도메인에 등록했습니다.
+기본 서비스 주소는 **https://eddie-planner.web.app**이며, 보조 주소 **https://eddie-planner.firebaseapp.com**에서도 같은 앱을 제공합니다. 두 호스트 모두 Authentication 승인 도메인에 등록했습니다.
 
-Hosting 사이트 `my-rocky`는 기존 프로젝트 `rocky-study-planner-6c82f1` 안에 있습니다. `firebase.json`의 `hosting.target`은 `rocky`이며, `.firebaserc`에서 이 대상을 사이트 `my-rocky`로 연결합니다. 프로젝트 ID와 웹 앱, `.env.local`, 인증용 `authDomain`인 `rocky-study-planner-6c82f1.firebaseapp.com`, Firestore 데이터베이스·문서·규칙은 그대로 사용합니다. Hosting 주소가 바뀌었다고 `authDomain`을 새 사이트 이름으로 바꾸지 않습니다.
+앱 표시 이름은 Eddie입니다. 기존 데이터와의 호환성을 위해 Firebase 프로젝트·앱 ID, 배포 대상과 브라우저 저장 키는 유지합니다. 이번 표시 이름 변경에는 Firebase 프로젝트와 Google OAuth의 원격 표시 이름 설정 변경이 포함되지 않습니다.
 
-새 주소 배포 후 데스크톱·모바일에서 HTTP 200, 캘린더, 주간 계획 이동·새로고침, 모바일 가로 넘침 없음과 Google 로그인 화면 연결을 확인했습니다. 앱의 브라우저 오류와 실패한 네트워크 요청은 없었습니다. 실제 Google 계정 선택·로그인 완료는 수행하지 않았으며 계정 저장·복원은 기존 Firebase 백엔드를 사용합니다.
+Hosting 사이트 `eddie-planner`는 기존 프로젝트 `rocky-study-planner-6c82f1` 안에 있습니다. `firebase.json`의 `hosting.target`은 `rocky`이며, `.firebaserc`에서 이 대상을 사이트 `eddie-planner`로 연결합니다. 프로젝트 ID와 웹 앱, `.env.local`, 인증용 `authDomain`인 `rocky-study-planner-6c82f1.firebaseapp.com`, Firestore 데이터베이스·문서·규칙은 그대로 사용합니다. Hosting 주소가 바뀌었다고 `authDomain`을 새 사이트 이름으로 바꾸지 않습니다.
+
+새 주소 배포 후 데스크톱·모바일에서 HTTP 200, 캘린더, 주간 계획 이동·새로고침, 모바일 가로 넘침 없음과 Google 로그인 화면 연결을 확인했습니다. 처리되지 않은 JavaScript 예외와 실패한 네트워크 요청은 없었습니다. 로그인 팝업 확인 중에는 `Cross-Origin-Opener-Policy policy would block the window.closed call.` 콘솔 메시지가 발생하여 콘솔 오류가 전혀 없음을 요구하는 자동 검사는 실패했습니다. 추가 확인에서는 Google 응답의 `Cross-Origin-Opener-Policy-Report-Only` 헤더와 실제 로그인 입력란 표시를 확인했습니다. 실제 Google 계정 선택·로그인 완료는 수행하지 않았으며 계정 저장·복원은 기존 Firebase 백엔드를 사용합니다.
 
 웹 설정이 들어 있는 `.env.local`을 준비하고 `VITE_FIREBASE_USE_EMULATORS=false`를 확인한 뒤 배포합니다.
 
@@ -110,9 +112,9 @@ npx firebase deploy --only hosting:rocky --project rocky-study-planner-6c82f1
 
 Hosting은 앱 경로를 `index.html`로 연결합니다. 시작 페이지는 `no-cache`로 최신 버전을 확인하고, 파일명에 해시가 있는 `/assets/`는 장기 캐시합니다. 앱의 주간 학습 계획 주소는 `/#plan`입니다. [Firebase Hosting 설정 안내](https://firebase.google.com/docs/hosting/full-config)
 
-이 명령은 `my-rocky` 사이트의 웹 앱만 배포합니다. Firestore 규칙을 바꾼 경우에는 앞의 규칙 배포 명령도 별도로 실행합니다.
+이 명령은 `eddie-planner` 사이트의 웹 앱만 배포합니다. Firestore 규칙을 바꾼 경우에는 앞의 규칙 배포 명령도 별도로 실행합니다.
 
-기존 **https://rocky-study-planner-6c82f1.web.app**과 **https://rocky-study-planner-6c82f1.firebaseapp.com**은 게스트 자료에 접근할 수 있도록 기존 배포를 그대로 유지합니다. 새 주소로 자동 리디렉션하지 않으며, 위의 `hosting:rocky` 배포 명령은 기존 사이트를 갱신하지 않습니다.
+기존 **https://my-rocky.web.app**과 **https://my-rocky.firebaseapp.com**, 프로젝트 기본 주소인 **https://rocky-study-planner-6c82f1.web.app**과 **https://rocky-study-planner-6c82f1.firebaseapp.com**은 게스트 자료에 접근할 수 있도록 기존 배포를 그대로 유지합니다. 새 주소로 자동 리디렉션하지 않으며, 위의 `hosting:rocky` 배포 명령은 기존 사이트를 갱신하지 않습니다.
 
 로컬·기존 Hosting·새 Hosting 주소는 각각 다른 호스트이므로 게스트 데이터와 계정 캐시를 담은 `localStorage`가 자동으로 이동하지 않습니다. 기존 주소에서 직접 작성한 게스트 플래너를 옮기려면 그 주소의 앱에서 Google 로그인 후 **브라우저 데이터 가져오기**를 선택하고 서버 저장 완료를 확인합니다. 가져오기는 계정 플래너가 비어 있을 때만 제공됩니다. 이미 로그인해 작성한 내용도 서버 저장 완료를 확인한 뒤 이동하세요. 새 주소에서 같은 Google 계정으로 로그인하면 같은 Firestore의 저장된 플래너를 불러옵니다. 로컬 앱의 자료도 같은 절차로 옮길 수 있습니다.
 
@@ -157,7 +159,7 @@ npm run dev:emulator
 
 | 기능 | 주소 |
 | --- | --- |
-| Rocky 에뮬레이터 앱 | `http://127.0.0.1:5174` |
+| Eddie 에뮬레이터 앱 | `http://127.0.0.1:5174` |
 | Firebase 에뮬레이터 UI | `http://127.0.0.1:4000` |
 | Authentication | `127.0.0.1:9099` |
 | Firestore | `127.0.0.1:8080` |
