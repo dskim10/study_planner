@@ -1,0 +1,12 @@
+.study-time-summary { margin: 0 0 20px; padding: 19px 22px; background: #fff; border: 1px solid var(--border); border-radius: 12px; }
+.study-time-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.study-time-heading h2 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 14px; }
+.study-time-heading h2 svg { flex-shrink: 0; color: var(--primary); }
+.study-time-heading a { flex-shrink: 0; font-size: 12px; color: var(--primary); }
+.study-time-summary > p { color: var(--muted); font-size: 12px; line-height: 1.7; margin: 10px 0; }
+.study-time-subjects { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 9px; margin: 14px 0; }
+.study-time-subjects > div { padding: 10px 12px; border-radius: 8px; background: #f8f6fc; }
+.study-time-subjects dt { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.study-time-subjects dd { margin: 5px 0 0; font-size: 14px; font-weight: 600; color: var(--primary); }
+.study-time-summary > small { color: var(--muted); display: block; font-size: 11px; line-height: 1.7; }
+@media (max-width: 760px) { .study-time-summary { padding: 16px; }.study-time-heading h2 { font-size: 13px; }.study-time-subjects { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

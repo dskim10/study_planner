@@ -1,0 +1,30 @@
+.category-options-trigger.icon-button { width: 28px; height: 28px; color: #928a9d; flex-shrink: 0; }
+.category-options-trigger.icon-button[aria-expanded="true"] { color: var(--primary); background: #f0edf8; }
+.category-options-trigger.category-options-compact { width: 24px; height: 26px; }
+.category-options-popover { position: fixed; z-index: 80; width: 252px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; overscroll-behavior: contain; padding: 14px 15px 11px; background: #fff; color: var(--text); border: 1px solid #e8e3ee; border-radius: 12px; box-shadow: 0 7px 28px #30213929, 0 2px 6px #3021390d; }
+.category-options-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 7px; }
+.category-options-heading strong { min-width: 0; padding-top: 3px; font-size: 12px; font-weight: 600; line-height: 1.65; overflow-wrap: anywhere; }
+.category-options-heading .icon-button { width: 26px; height: 26px; flex-shrink: 0; margin-right: -4px; }
+.category-options-caption { color: #93869e; font-size: 10px; margin: 0 0 9px; }
+.category-options-palette { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px 4px; }
+.category-options-swatch { display: grid; place-items: center; min-width: 0; width: 100%; aspect-ratio: 1; padding: 3px; background: transparent; border: 0; border-radius: 50%; }
+.category-options-swatch > span { display: grid; place-items: center; width: 100%; aspect-ratio: 1; border-radius: 50%; background: var(--swatch-color); color: var(--swatch-check); box-shadow: inset 0 0 0 1px #0000000b; }
+.category-options-swatch:hover { background: #ede9f2; }
+.category-options-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px #9182a4; }
+.category-options-swatch:focus-visible { outline: 2px solid #74618d; outline-offset: 1px; }
+.category-options-custom-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 10px; }
+.category-options-custom-toggle { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 5px 3px; border: 0; border-radius: 6px; background: transparent; color: #877690; font-size: 11px; }
+.category-options-custom-toggle:hover { color: var(--primary); background: #f7f4fc; }
+.category-options-custom-toggle > svg { border: 1px solid #d4cbdf; border-radius: 50%; width: 25px; height: 25px; padding: 4px; }
+.category-options-current { display: grid; place-items: center; width: 23px; height: 23px; flex-shrink: 0; border-radius: 50%; border: 1px solid #00000012; }
+.category-options-custom { margin-top: 10px; padding: 10px; border: 1px solid #eee8f4; border-radius: 8px; background: #fcfaff; }
+.category-options-hex-label { display: flex; flex-direction: column; gap: 6px; color: #796984; font-size: 10px; }
+.category-options-hex-label .input { padding: 7px 9px; min-height: 35px; font-size: 12px; }
+.category-options-custom-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.category-options-custom-actions input[type="color"] { width: 36px; height: 33px; padding: 2px; background: #fff; border: 1px solid #ddd4e7; border-radius: 6px; cursor: pointer; }
+.category-options-custom-actions .button { min-height: 33px; padding: 6px 11px; font-size: 10px; }
+.category-options-error { margin: 10px 0 0; padding: 8px; background: #fff1f2; border-radius: 6px; color: #a24d60; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.category-options-footer { margin: 11px -15px -4px; padding: 8px 10px 0; border-top: 1px solid #eeebf2; }
+.category-options-delete { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 35px; border: 0; border-radius: 6px; padding: 8px 9px; background: transparent; color: #a56773; font-size: 11px; text-align: left; }
+.category-options-delete:hover { background: #fff2f4; color: #a64e62; }
+@media (pointer: coarse) { .category-options-trigger.icon-button { width: 32px; height: 32px; }.category-options-trigger.category-options-compact { width: 28px; height: 30px; }.category-options-custom-toggle { min-height: 38px; }.category-options-delete { min-height: 40px; } }

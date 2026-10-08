@@ -17,6 +17,8 @@
 .cal-category-filter input:focus-visible { outline: 2px solid #9d83d9; outline-offset: 3px; }
 .cal-category-filter:has(input:not(:checked)) > span { color: #aaa4b3; }
 .cal-filter-note { margin: -4px 23px 16px; color: #82748f; font-size: 11px; line-height: 1.6; }
+.cal-subject-category-note { display: flex; align-items: flex-start; gap: 6px; color: #92869e; }
+.cal-subject-category-note > svg { flex-shrink: 0; margin-top: 3px; }
 .cal-add-category { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border: 1px dashed #d6cbed; border-radius: 5px; background: #fcfaff; color: #7561bc; font-size: 10px; white-space: nowrap; cursor: pointer; }
 .cal-add-category:hover { background: #f1ebfb; }
 .cal-legend-free i { background: #d8e9df; }
@@ -97,7 +99,10 @@
 .cal-month-cell .cal-date-number { font-size: 12px; width: 25px; height: 25px; }
 .cal-month-add { display: inline-flex; align-items: center; justify-content: center; width: 23px; height: 23px; border: 0; border-radius: 4px; background: transparent; color: #b7adc7; cursor: pointer; }
 .cal-month-add:hover { color: #7561d8; background: #efeaf8; }
-.cal-month-available { display: block; margin: 4px 3px 9px; color: #8a9d90; font-size: 9px; }
+.cal-month-available { display: block; margin: 4px 3px; color: #8a9d90; font-size: 9px; }
+.cal-planned-time { display: block; color: var(--primary); font-size: 10px; line-height: 1.5; }
+.cal-month-cell > .cal-planned-time { margin: 0 3px 8px; font-size: 9px; }
+.cal-other-month > .cal-planned-time { opacity: .45; }
 .cal-month-events { display: flex; flex-direction: column; gap: 4px; }
 .cal-month-event { display: flex; align-items: center; gap: 4px; max-width: 100%; min-height: 21px; padding: 3px 4px; border: 0; border-radius: 3px; text-align: left; cursor: pointer; }
 .cal-month-event > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 9px; }

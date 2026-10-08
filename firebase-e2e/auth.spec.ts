@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { createEmptyState } from '../src/lib/planner';
+import { addSubject } from '../src/lib/subjects';
 
 async function skipOptionalEmulatorAssets(page: Page) {
   // These files only decorate the emulator's account picker. Keep the real
@@ -8,9 +9,12 @@ async function skipOptionalEmulatorAssets(page: Page) {
 }
 
 const guest = {
-  ...createEmptyState(),
+  ...addSubject(createEmptyState(), '코딩'),
   events: [{ id: 'local-class', title: '나의 수학 수업', type: 'school', date: '2026-10-05', startTime: '09:00', endTime: '11:00', allDay: false, recurrence: 'weekly', weekdays: [1, 3] }],
-  goals: [{ id: 'local-goal', weekStart: '2026-10-05', subject: '수학', material: '개념서', range: '2단원', estimatedMinutes: 90, completed: false }],
+  goals: [
+    { id: 'local-goal', weekStart: '2026-10-05', subject: '수학', material: '개념서', range: '2단원', completed: false },
+    { id: 'coding-goal', weekStart: '2026-10-05', subject: '코딩', material: '프로그래밍 노트', range: '첫 프로그램', completed: false },
+  ],
 };
 
 async function open(page: Page, seed = true) {
@@ -62,6 +66,11 @@ test('Google popup, guest import, logout, account isolation and a fresh browser 
   await page.getByRole('region', { name: '내 캘린더', exact: true }).getByRole('checkbox', { name: '학교 수업', exact: true }).uncheck();
   await expect(page.locator('.cal-event')).toHaveCount(0);
   await expect(page.locator('.save-status')).toHaveText('계정에 저장됨');
+  await page.getByRole('region', { name: '내 캘린더', exact: true }).getByRole('button', { name: '수학 옵션', exact: true }).click();
+  const colorOptions = page.getByRole('dialog', { name: '수학 옵션', exact: true });
+  await colorOptions.getByRole('button', { name: '빨강 색상 #D50000', exact: true }).click();
+  await colorOptions.getByRole('button', { name: '옵션 닫기', exact: true }).click();
+  await expect(page.locator('.save-status')).toHaveText('계정에 저장됨');
   await page.getByRole('link', { name: '주간 학습 계획', exact: true }).click();
   await page.getByRole('checkbox', { name: /개념서/ }).check();
   await expect(page.locator('.save-status')).toHaveText('계정에 저장됨');
@@ -87,9 +96,15 @@ test('Google popup, guest import, logout, account isolation and a fresh browser 
     await expect(fresh.locator('.planner-content')).toHaveAttribute('aria-busy', 'false');
     await login(fresh, email);
     await expect(fresh.locator('.cal-legend').getByRole('checkbox', { name: '학교 수업', exact: true })).not.toBeChecked();
+    await expect(fresh.locator('.cal-legend').getByRole('checkbox', { name: '수학', exact: true })).toHaveCSS('accent-color', 'rgb(213, 0, 0)');
+    await expect(fresh.locator('.cal-legend').getByRole('img', { name: '코딩: 이름과 삭제는 과목 관리에서 변경', exact: true })).toBeVisible();
     await expect(fresh.locator('.available-stat .stat-value')).toContainText('164시간');
     await fresh.getByRole('link', { name: '주간 학습 계획', exact: true }).click();
     await expect(fresh.getByRole('checkbox', { name: /개념서/ })).toBeChecked();
+    await expect(fresh.getByRole('checkbox', { name: /코딩 프로그래밍 노트 첫 프로그램 완료/ })).not.toBeChecked();
+    await expect(fresh.getByRole('region', { name: '과목별 계획한 학습 시간', exact: true }).getByText('코딩', { exact: true })).toBeVisible();
+    await expect(fresh.locator('.planned-stat .stat-value')).toContainText('0분');
+    await expect(fresh.locator('.remaining-stat .stat-value')).toContainText('164시간');
     expect(await fresh.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await fresh.getByRole('button', { name: '내 계정', exact: true }).click();
     await fresh.screenshot({ path: 'test-results-firebase/firebase-account-mobile.png', animations: 'disabled' });

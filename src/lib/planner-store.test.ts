@@ -4,7 +4,8 @@ import type { PlannerAccount, PlannerBackend, RemotePlanner } from './cloud';
 import { CloudError } from './cloud';
 import { createDemoState, createEmptyState } from './planner';
 import { ACCOUNT_STORAGE_PREFIX, PlannerStore } from './planner-store';
-import { STORAGE_KEY } from './storage';
+import { readPlannerState, STORAGE_KEY } from './storage';
+import { DEFAULT_EVENT_CATEGORIES } from '../types';
 
 class MemoryStorage implements Storage {
   values = new Map<string, string>();
@@ -51,6 +52,34 @@ async function settle() { for (let i = 0; i < 12; i++) await Promise.resolve(); 
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); });
 
 describe('planner account persistence', () => {
+  it('recognizes migrated default-only accounts as empty without automatically uploading new categories', async () => {
+    const storage = new MemoryStorage();
+    storage.setItem(STORAGE_KEY, JSON.stringify(plan('guest')));
+    const { store, backend } = setup(storage);
+    const legacy = { ...createEmptyState(), categories: DEFAULT_EVENT_CATEGORIES.map((category) => ({ ...category })) };
+    delete legacy.subjects;
+    backend.documents.set('a', { data: legacy, revision: 2 });
+    backend.emit('a'); await settle();
+    expect(store.getSnapshot().data).toEqual(createEmptyState());
+    expect(store.getSnapshot().canImportGuest).toBe(true);
+    expect(backend.save).not.toHaveBeenCalled();
+    expect(backend.documents.get('a')?.data).toEqual(legacy);
+  });
+
+  it('migrates independent old server and dirty cache copies identically without a false revision conflict', async () => {
+    const storage = new MemoryStorage();
+    const legacy = { ...plan('already committed'), categories: DEFAULT_EVENT_CATEGORIES.map((category) => ({ ...category })) };
+    delete legacy.subjects;
+    storage.setItem(ACCOUNT_STORAGE_PREFIX + 'a', JSON.stringify({ data: legacy, revision: 1, dirty: true }));
+    const { store, backend } = setup(storage);
+    backend.documents.set('a', { data: structuredClone(legacy), revision: 2 });
+    backend.emit('a'); await settle();
+    expect(store.getSnapshot()).toMatchObject({ status: 'ready', dirty: false, readOnly: false });
+    expect(store.getSnapshot().data).toEqual(readPlannerState(legacy));
+    expect(JSON.parse(storage.getItem(ACCOUNT_STORAGE_PREFIX + 'a')!)).toEqual({ data: readPlannerState(legacy), revision: 2, dirty: false });
+    expect(backend.save).not.toHaveBeenCalled();
+  });
+
   it('keeps guest plans compatible with the legacy key and persists edits immediately', () => {
     const { store, storage } = setup(new MemoryStorage(), null);
     expect(store.getSnapshot().data.isDemo).toBe(true);
@@ -132,6 +161,35 @@ describe('planner account persistence', () => {
     expect(backend.documents.get('a')?.data.events[0].title).toBe('account edit');
     backend.emit('a'); await settle();
     expect(store.getSnapshot().data.events[0].title).toBe('account edit');
+  });
+
+  it('imports guest subject customizations into a new account, including an intentionally empty list', async () => {
+    for (const subjects of [[], ['독서']]) {
+      const storage = new MemoryStorage();
+      const guest = { ...createEmptyState(), subjects };
+      storage.setItem(STORAGE_KEY, JSON.stringify(guest));
+      const { store, backend } = setup(storage);
+      backend.emit('a'); await settle();
+      expect(store.getSnapshot().canImportGuest).toBe(true);
+      await store.importGuest();
+      expect(backend.documents.get('a')).toEqual({ data: readPlannerState(guest), revision: 1 });
+      expect(JSON.parse(storage.getItem(STORAGE_KEY)!)).toEqual(guest);
+    }
+  });
+
+  it('does not replace an existing account with customized subjects through guest import', async () => {
+    for (const subjects of [[], ['독서']]) {
+      const storage = new MemoryStorage();
+      storage.setItem(STORAGE_KEY, JSON.stringify(plan('guest')));
+      const { store, backend } = setup(storage);
+      const cloud = { ...createEmptyState(), subjects };
+      backend.documents.set('a', { data: cloud, revision: 1 });
+      backend.emit('a'); await settle();
+      expect(store.getSnapshot().canImportGuest).toBe(false);
+      await store.importGuest();
+      expect(backend.documents.get('a')).toEqual({ data: cloud, revision: 1 });
+      expect(backend.save).not.toHaveBeenCalled();
+    }
   });
 
   it('ignores a delayed load from another account and clears the previous account immediately', async () => {

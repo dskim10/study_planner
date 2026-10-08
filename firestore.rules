@@ -8,12 +8,14 @@ service cloud.firestore {
     function validPlanner(data) {
       return data is map
         && data.keys().hasAll(['version', 'categories', 'events', 'goals', 'isDemo'])
-        && data.keys().hasOnly(['version', 'categories', 'events', 'goals', 'isDemo', 'hiddenCategoryIds'])
+        && data.keys().hasOnly(['version', 'categories', 'events', 'goals', 'isDemo', 'hiddenCategoryIds', 'subjects'])
         && data.version == 3
         && data.categories is list
         && data.events is list
         && (data.categories.size() > 0 || data.events.size() == 0)
         && data.goals is list
+        && (!('subjects' in data) || (data.subjects is list
+          && (data.subjects.size() > 0 || data.goals.size() == 0)))
         && data.isDemo is bool
         && (!('hiddenCategoryIds' in data) || data.hiddenCategoryIds is list);
     }
@@ -36,6 +38,8 @@ service cloud.firestore {
       allow update: if isOwner(uid) && validEnvelope(uid)
         && resource.data.ownerId == uid
         && request.resource.data.ownerId == resource.data.ownerId
+        // Older clients omit subjects when saving; never let them erase an upgraded list.
+        && (!('subjects' in resource.data.data) || 'subjects' in request.resource.data.data)
         && request.resource.data.revision == resource.data.revision + 1;
       allow list, delete: if false;
     }

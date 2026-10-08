@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ScheduleEvent, StudyGoal } from '../types';
-import { DEFAULT_EVENT_CATEGORIES } from '../types';
+import { DEFAULT_EVENT_CATEGORIES, DEFAULT_SUBJECTS } from '../types';
 import {
   addDays, createDemoState, createEmptyState, formatDuration, getDaySummary,
-  getGoalSummary, getWeekDays, getWeekSummary, minutesToTime, occursOn, parseDate, startOfWeek,
+  getGoalSummary, getStudyPlanSummary, getWeekDays, getWeekSummary, minutesToTime, occursOn, parseDate, startOfWeek,
   timeToMinutes, toDateKey,
 } from './planner';
 
@@ -215,19 +215,20 @@ describe('available self-study time', () => {
 });
 
 describe('weekly learning goals and state', () => {
-  it('keeps completed goals in planned time and excludes goals from other weeks', () => {
+  it('counts completed goals independently of legacy durations and excludes other weeks', () => {
     const goals = [goal(), goal({ id: 'done', completed: true, estimatedMinutes: 150 }), goal({ id: 'next', weekStart: '2026-10-12', estimatedMinutes: 300 })];
-    expect(getGoalSummary(goals, monday)).toEqual({ plannedMinutes: 240, completedMinutes: 150, completedCount: 1, totalCount: 2 });
-    expect(getGoalSummary(goals, '2026-10-12').plannedMinutes).toBe(300);
-    expect(getGoalSummary([], monday)).toEqual({ plannedMinutes: 0, completedMinutes: 0, completedCount: 0, totalCount: 0 });
+    expect(getGoalSummary(goals, monday)).toEqual({ completedCount: 1, totalCount: 2 });
+    expect(getGoalSummary(goals, '2026-10-12')).toEqual({ completedCount: 0, totalCount: 1 });
+    expect(getGoalSummary([], monday)).toEqual({ completedCount: 0, totalCount: 0 });
   });
 
   it('keeps available time independent of planned goal duration and completion', () => {
     const state = createDemoState(monday);
     const before = getWeekSummary(monday, state.events);
+    const plannedBefore = getStudyPlanSummary(before, state.categories, state.subjects!);
     state.goals = [goal({ estimatedMinutes: 20000, completed: true })];
     expect(getWeekSummary(monday, state.events)).toEqual(before);
-    expect(getGoalSummary(state.goals, monday).plannedMinutes).toBe(20000);
+    expect(getStudyPlanSummary(getWeekSummary(monday, state.events), state.categories, state.subjects!)).toEqual(plannedBefore);
   });
 
   it('creates isolated empty states and fictional examples anchored to the selected week', () => {
@@ -236,9 +237,15 @@ describe('weekly learning goals and state', () => {
     empty.goals.push(goal());
     empty.categories[0].label = '다른 이름';
     empty.categories.push({ id: 'exercise', label: '운동', color: '#2d8c72' });
-    expect(createEmptyState()).toEqual({ version: 3, categories: DEFAULT_EVENT_CATEGORIES, events: [], goals: [], isDemo: false });
+    empty.subjects!.push('추가 과목');
+    const nextEmpty = createEmptyState();
+    expect(nextEmpty).toMatchObject({ version: 3, subjects: DEFAULT_SUBJECTS, events: [], goals: [], isDemo: false });
+    expect(nextEmpty.categories.slice(0, DEFAULT_EVENT_CATEGORIES.length)).toEqual(DEFAULT_EVENT_CATEGORIES);
+    expect(nextEmpty.categories.slice(DEFAULT_EVENT_CATEGORIES.length).map((category) => category.label)).toEqual(DEFAULT_SUBJECTS);
     const demo = createDemoState('2027-01-01');
-    expect(demo.categories).toEqual(DEFAULT_EVENT_CATEGORIES);
+    expect(demo.categories.slice(0, DEFAULT_EVENT_CATEGORIES.length)).toEqual(DEFAULT_EVENT_CATEGORIES);
+    expect(demo.goals.every((item) => item.estimatedMinutes === undefined)).toBe(true);
+    expect(getStudyPlanSummary(getWeekSummary('2026-12-28', demo.events), demo.categories, demo.subjects!).plannedMinutes).toBeGreaterThan(0);
     demo.categories[0].color = '#ffffff';
     expect(createDemoState(monday).categories[0].color).toBe('#6d8ec7');
     expect(demo.isDemo).toBe(true);
@@ -246,5 +253,69 @@ describe('weekly learning goals and state', () => {
     const week = getWeekSummary('2026-12-28', demo.events);
     expect(week.every((day) => day.availableMinutes > 0)).toBe(true);
     expect(demo.events.some((item) => item.type === 'academic' && item.date === '2027-01-06')).toBe(true);
+  });
+});
+
+describe('calendar study time by registered subject', () => {
+  const categories = [
+    { id: 'math', label: ' 수학 ', color: '#112233' },
+    { id: 'english', label: 'ＥＮＧＬＩＳＨ', color: '#223344' },
+    { id: 'school', label: '학교 수업', color: '#334455' },
+  ];
+  const subjects = ['수학', 'English', '과학'];
+
+  it('counts normalized category matches only and includes subjects without goals or events', () => {
+    const days = getWeekSummary(monday, [event({ type: 'math' }), event({ id: 'other', type: 'school', endTime: '17:00' })]);
+    expect(getStudyPlanSummary(days, categories, subjects)).toEqual({
+      plannedMinutes: 60,
+      subjects: [{ subject: '수학', plannedMinutes: 60 }, { subject: 'English', plannedMinutes: 0 }, { subject: '과학', plannedMinutes: 0 }],
+      days: getWeekDays(monday).map((date, index) => ({ date, plannedMinutes: index === 0 ? 60 : 0 })),
+    });
+    expect(getStudyPlanSummary(days, categories, []).plannedMinutes).toBe(0);
+    expect(getStudyPlanSummary(days, [], subjects).plannedMinutes).toBe(0);
+  });
+
+  it('merges same-subject and cross-subject overlaps independently', () => {
+    const days = getWeekSummary(monday, [
+      event({ id: 'a', type: 'math', startTime: '09:00', endTime: '11:00' }),
+      event({ id: 'b', type: 'math', startTime: '10:00', endTime: '12:00' }),
+      event({ id: 'c', type: 'english', startTime: '11:00', endTime: '13:00' }),
+      event({ id: 'd', type: 'english', startTime: '13:00', endTime: '14:00' }),
+    ]);
+    const original = structuredClone(days);
+    expect(getStudyPlanSummary(days, categories, subjects)).toMatchObject({
+      plannedMinutes: 300, subjects: [{ subject: '수학', plannedMinutes: 180 }, { subject: 'English', plannedMinutes: 180 }, { subject: '과학', plannedMinutes: 0 }],
+    });
+    expect(days).toEqual(original);
+  });
+
+  it('counts recurring occurrences through their inclusive end and the final midnight minute', () => {
+    const events = [event({ type: 'math', recurrence: 'weekly', weekdays: [1, 3, 5], repeatUntil: '2026-10-07', startTime: '23:59', endTime: '24:00' })];
+    const summary = getStudyPlanSummary(getWeekSummary(monday, events), categories, subjects);
+    expect(summary.plannedMinutes).toBe(2);
+    expect(summary.days.map((day) => day.plannedMinutes)).toEqual([1, 0, 1, 0, 0, 0, 0]);
+    expect(getStudyPlanSummary(getWeekSummary('2026-10-12', events), categories, subjects).plannedMinutes).toBe(0);
+  });
+
+  it('respects actual custom recurrence counts, monthly skips and leap dates', () => {
+    const events = [event({ type: 'math', date: '2026-01-31', recurrence: 'custom', customRecurrence: { interval: 1, unit: 'month', weekdays: [], monthPattern: 'dayOfMonth', end: { type: 'count', count: 2 } } })];
+    expect(getStudyPlanSummary(getWeekSummary('2026-02-23', events), categories, subjects).plannedMinutes).toBe(0);
+    expect(getStudyPlanSummary(getWeekSummary('2026-03-30', events), categories, subjects).plannedMinutes).toBe(60);
+    expect(getStudyPlanSummary(getWeekSummary('2026-05-25', events), categories, subjects).plannedMinutes).toBe(0);
+    const leap = [event({ type: 'math', date: '2024-02-29', recurrence: 'custom', customRecurrence: { interval: 1, unit: 'year', weekdays: [], monthPattern: 'dayOfMonth', end: { type: 'never' } } })];
+    expect(getStudyPlanSummary(getWeekSummary('2025-02-24', leap), categories, subjects).plannedMinutes).toBe(0);
+    expect(getStudyPlanSummary(getWeekSummary('2028-02-28', leap), categories, subjects).plannedMinutes).toBe(60);
+  });
+
+  it('counts all-day matches as one full day and includes hidden category schedules', () => {
+    const state = { ...createEmptyState(), categories, subjects, hiddenCategoryIds: ['math', 'english'], events: [
+      event({ type: 'math', allDay: true }), event({ id: 'overlap', type: 'english', startTime: '00:00', endTime: '24:00' }),
+    ] };
+    const days = getWeekSummary(monday, state.events);
+    expect(getStudyPlanSummary(days, state.categories, state.subjects)).toMatchObject({ plannedMinutes: 1440, subjects: [
+      { subject: '수학', plannedMinutes: 1440 }, { subject: 'English', plannedMinutes: 1440 }, { subject: '과학', plannedMinutes: 0 },
+    ] });
+    expect(days[0].availableMinutes).toBe(0);
+    expect(getStudyPlanSummary(days, state.categories, state.subjects)).toEqual(getStudyPlanSummary(days, categories, subjects));
   });
 });

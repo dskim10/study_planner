@@ -14,20 +14,21 @@
 .field .type-options { grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); }
 .field .type-option { overflow-wrap: anywhere; min-width: 0; }
 .type-option .color-dot { flex-shrink: 0; }
+.type-option-label { min-width: 0; overflow-wrap: anywhere; }
+.type-option-lock { flex-shrink: 0; color: #9a8ca9; }
+.subject-category-lock { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: #9b8dab; }
+.category-sidebar-lock { width: 14px; min-height: 28px; }
 .calendar-legend .category-sidebar-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 14px; }
 .calendar-legend .category-sidebar-heading h3 { margin-bottom: 0; }
 .category-sidebar-heading .icon-button { width: 23px; height: 23px; }
 .calendar-legend .category-sidebar-item { display: flex; align-items: flex-start; gap: 9px; min-height: 28px; padding: 5px 0; margin-bottom: 5px; font-size: 11px; color: #656473; overflow-wrap: anywhere; cursor: pointer; }
 .category-sidebar-item input { flex-shrink: 0; width: 14px; height: 14px; margin: 1px 0 0; cursor: pointer; }
 .category-sidebar-item:has(input:not(:checked)) > span { color: #9895a3; }
-.category-sidebar-row { display: flex; align-items: flex-start; gap: 5px; margin-bottom: 5px; }
+.calendar-legend .category-sidebar-row { display: flex; align-items: center; gap: 4px; margin: 0 -6px 3px; padding: 2px 6px; border-radius: 8px; }
+.calendar-legend .category-sidebar-row:hover, .calendar-legend .category-sidebar-row:focus-within { background: #f2f0f8; }
 .category-sidebar-row .category-sidebar-item { flex: 1; min-width: 0; margin-bottom: 0; }
-.category-delete-trigger.icon-button { width: 28px; height: 28px; color: #aaa3b4; }
-.category-delete-trigger.icon-button:hover, .category-delete-trigger.icon-button:focus-visible { color: #b14c5c; background: #fceff2; }
 .calendar-legend .category-empty-hint { font-size: 11px; line-height: 1.7; color: #8a8798; }
-@media (pointer: coarse) {
-  .category-delete-trigger.icon-button { width: 32px; height: 32px; }
-}
+.calendar-legend .subject-category-sidebar-hint { display: block; margin: 9px 0 17px; font-size: 10px; line-height: 1.8; color: #958b9e; }
 .category-delete-body { display: flex; flex-direction: column; gap: 12px; color: #656473; font-size: 13px; line-height: 1.65; }
 .category-delete-body p { margin: 0; }
 .category-delete-heading { color: #373341; overflow-wrap: anywhere; }

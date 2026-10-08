@@ -41,7 +41,8 @@ export interface StudyGoal {
   subject: string;
   material: string;
   range: string;
-  estimatedMinutes: number;
+  /** Kept only for older saved goals; calendar events now determine study time. */
+  estimatedMinutes?: number;
   completed: boolean;
 }
 
@@ -49,6 +50,7 @@ export interface PlannerState {
   version: 3;
   categories: EventCategory[];
   hiddenCategoryIds?: string[];
+  subjects?: string[];
   events: ScheduleEvent[];
   goals: StudyGoal[];
   isDemo: boolean;
@@ -61,6 +63,14 @@ export interface DaySummary {
   events: ScheduleEvent[];
   freeSlots: { start: number; end: number }[];
 }
+
+export interface StudyPlanSummary {
+  plannedMinutes: number;
+  subjects: { subject: string; plannedMinutes: number }[];
+  days: { date: string; plannedMinutes: number }[];
+}
+
+export const DEFAULT_SUBJECTS: string[] = ['국어', '수학', '영어', '과학', '사회', '한국사'];
 
 export const DEFAULT_EVENT_CATEGORIES: EventCategory[] = [
   { id: 'school', label: '학교 수업', color: '#6d8ec7' },

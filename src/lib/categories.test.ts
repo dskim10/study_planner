@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { EventCategory } from '../types';
 import { DEFAULT_EVENT_CATEGORIES } from '../types';
-import { getCategoryError, removeCategory } from './categories';
-import { createDemoState, getWeekSummary } from './planner';
-import { isPlannerState } from './storage';
+import { getCategoryError, removeCategory, updateCategoryColor } from './categories';
+import { createDemoState, getStudyPlanSummary, getWeekSummary } from './planner';
+import { isPlannerState, readPlannerState } from './storage';
+import { addSubject, isSubjectCategory, removeSubject, renameSubject, syncSubjectCategories } from './subjects';
 
 const category = (changes: Partial<EventCategory> = {}): EventCategory => ({
   id: 'exercise', label: '운동', color: '#2d8c72', ...changes,
@@ -50,6 +51,61 @@ function sample() {
   return state;
 }
 
+describe('event category color changes', () => {
+  it.each(['school', 'exercise', 'study-math'])('changes only the display color for %s, including protected subject categories', (categoryId) => {
+    const state = sample();
+    const original = structuredClone(state);
+    const updated = updateCategoryColor(state, categoryId, '#A1B2C3');
+    expect(updated.categories).toEqual(state.categories.map((category) => category.id === categoryId ? { ...category, color: '#a1b2c3' } : category));
+    expect(updated.events).toBe(state.events);
+    expect(updated.goals).toBe(state.goals);
+    expect(updated.subjects).toBe(state.subjects);
+    expect(updated.hiddenCategoryIds).toBe(state.hiddenCategoryIds);
+    expect(updated.isDemo).toBe(false);
+    expect(readPlannerState(JSON.parse(JSON.stringify(updated)))).toEqual(updated);
+    expect(state).toEqual(original);
+  });
+
+  it('rejects missing categories and invalid color formats without changing data', () => {
+    const state = sample();
+    const original = structuredClone(state);
+    for (const id of ['missing', '', ' school ']) expect(() => updateCategoryColor(state, id, '#123456')).toThrow('일정 종류를 찾을 수 없어요');
+    for (const color of ['', 'red', '#fff', '#12345678', '123456', '#12345g', '#123456\n', ' #123456', '#123456 ']) {
+      expect(() => updateCategoryColor(state, 'school', color)).toThrow('올바른 색상');
+    }
+    expect(state).toEqual(original);
+  });
+
+  it('retains a 40-character subject category color through sync, rename, subject removal, and reload', () => {
+    const subject = '가'.repeat(40);
+    const state = addSubject(sample(), subject);
+    const linked = state.categories.find((category) => category.label === subject)!;
+    const updated = updateCategoryColor(state, linked.id, '#ABCDEF');
+    expect(syncSubjectCategories(updated)).toBe(updated);
+    const renamed = renameSubject(updated, subject, '나'.repeat(40));
+    expect(renamed.categories.find((category) => category.id === linked.id)).toEqual({ ...linked, label: '나'.repeat(40), color: '#abcdef' });
+    const unlinked = removeSubject(renamed, '나'.repeat(40));
+    const recolored = updateCategoryColor(unlinked, linked.id, '#123456');
+    expect(readPlannerState(JSON.parse(JSON.stringify(recolored)))).toEqual(recolored);
+    expect(recolored.categories.find((category) => category.id === linked.id)?.color).toBe('#123456');
+    expect(recolored.events).toBe(state.events);
+  });
+
+  it('keeps hidden repeating events, all-day schedules, available time, and planned time unchanged', () => {
+    const state = sample();
+    state.hiddenCategoryIds!.push('study-math');
+    const updated = ['exercise', 'academic', 'study-math'].reduce((current, id) => updateCategoryColor(current, id, '#345678'), state);
+    expect(updated.hiddenCategoryIds).toEqual(state.hiddenCategoryIds);
+    expect(updated.events).toEqual(state.events);
+    for (const week of ['2026-10-05', '2026-10-12', '2026-11-02']) {
+      const before = getWeekSummary(week, state.events);
+      const after = getWeekSummary(week, updated.events);
+      expect(after).toEqual(before);
+      expect(getStudyPlanSummary(after, updated.categories, updated.subjects!)).toEqual(getStudyPlanSummary(before, state.categories, state.subjects!));
+    }
+  });
+});
+
 describe('event category removal', () => {
   it.each(['school', 'academic', 'exercise'])('deletes the %s category and its schedules without changing other data', (categoryId) => {
     const state = sample();
@@ -87,12 +143,35 @@ describe('event category removal', () => {
     expect(removed.events.find((event) => event.id === 'demo-school')?.type).toBe('exercise');
   });
 
-  it('allows all default and custom categories to be removed and keeps weekly goals', () => {
+  it('keeps linked subject categories and goals while allowing all ordinary categories to be removed', () => {
     const state = sample();
-    const removed = state.categories.reduce((current, item) => removeCategory(current, item.id), state);
-    expect(removed).toEqual({ ...state, categories: [], events: [], hiddenCategoryIds: [], isDemo: false });
-    expect(getWeekSummary('2026-10-05', removed.events).reduce((sum, day) => sum + day.availableMinutes, 0)).toBe(10080);
+    const ordinary = state.categories.filter((category) => !isSubjectCategory(category, state.subjects!));
+    const removed = ordinary.reduce((current, item) => removeCategory(current, item.id), state);
+    expect(removed.categories).toEqual(state.categories.filter((category) => isSubjectCategory(category, state.subjects!)));
+    expect(removed.events).toEqual(state.events.filter((event) => removed.categories.some((category) => category.id === event.type)));
+    expect(removed.goals).toEqual(state.goals);
+    expect(removed.hiddenCategoryIds).toEqual([]);
     expect(isPlannerState(removed)).toBe(true);
+  });
+
+  it('blocks deletion of linked categories even with a transfer destination, then unlocks after subject removal', () => {
+    const state = sample();
+    const linked = state.categories.find((category) => category.label === '수학')!;
+    expect(() => removeCategory(state, linked.id)).toThrow('과목 관리');
+    expect(() => removeCategory(state, linked.id, 'school')).toThrow('과목 관리');
+    const unlinked = removeSubject(state, '수학', '영어');
+    const removed = removeCategory(unlinked, linked.id, 'school');
+    expect(removed.events).toEqual(state.events.map((event) => event.type === linked.id ? { ...event, type: 'school' } : event));
+    expect(removed.goals).toEqual(unlinked.goals);
+    expect(isPlannerState(removed)).toBe(true);
+  });
+
+  it('can move an ordinary category into a protected subject category', () => {
+    const state = sample();
+    const linked = state.categories.find((category) => category.label === '수학')!;
+    const removed = removeCategory(state, 'exercise', linked.id);
+    expect(removed.events.find((event) => event.id === 'run')?.type).toBe(linked.id);
+    expect(removed.categories).toContainEqual(linked);
   });
 
   it('supports existing data without a visibility preference', () => {

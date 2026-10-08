@@ -1,12 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
-import { DEFAULT_EVENT_CATEGORIES, type PlannerState, type ScheduleEvent } from '../src/types';
+import { DEFAULT_SUBJECTS, type PlannerState, type ScheduleEvent } from '../src/types';
+import { createEmptyState } from '../src/lib/planner';
 
-const categories = [...DEFAULT_EVENT_CATEGORIES, { id: 'club', label: '동아리', color: '#2d8c72' }];
+const categories = [...createEmptyState().categories, { id: 'club', label: '동아리', color: '#2d8c72' }];
 const event = (id: string, type: string, startTime: string, endTime: string, changes: Partial<ScheduleEvent> = {}): ScheduleEvent => ({
   id, title: id, type, date: '2026-10-05', startTime, endTime, allDay: false, recurrence: 'none', weekdays: [], ...changes,
 });
 const fixture: PlannerState = {
-  version: 3, categories, isDemo: false,
+  version: 3, categories, subjects: DEFAULT_SUBJECTS, isDemo: false,
   events: [
     event('정규 수업', 'school', '09:00', '11:00', { recurrence: 'weekly', weekdays: [1, 3] }),
     event('수학 학원', 'academy', '10:00', '12:00'),
@@ -79,7 +80,8 @@ test('month counts and all-unchecked selection persist across reload, page and w
   await expect(page.locator('.available-stat .stat-value')).toContainText('136시간');
   await page.getByRole('link', { name: '주간 학습 계획', exact: true }).click();
   await expect(page.locator('.available-stat .stat-value')).toContainText('136시간');
-  await expect(page.locator('.stat-card').nth(1)).toContainText('1시간');
+  await expect(page.locator('.planned-stat .stat-value')).toContainText('0분');
+  await expect(page.locator('.remaining-stat .stat-value')).toContainText('136시간');
   await page.getByRole('link', { name: '캘린더', exact: true }).click();
   await page.getByRole('button', { name: '다음 주', exact: true }).click();
   await expect(page.locator('.cal-event')).toHaveCount(0);
@@ -117,7 +119,7 @@ test('new custom categories start checked and resetting the planner restores all
   await page.getByRole('button', { name: '데이터 관리', exact: true }).click();
   await page.getByRole('button', { name: '새 플래너 시작', exact: true }).click();
   await page.getByRole('button', { name: '비우고 시작하기', exact: true }).click();
-  for (const category of DEFAULT_EVENT_CATEGORIES) await expect(filter(page, category.label)).toBeChecked();
+  for (const category of createEmptyState().categories) await expect(filter(page, category.label)).toBeChecked();
   await expect(filter(page, '운동')).toHaveCount(0);
   await expect(page.locator('.available-stat .stat-value')).toContainText('168시간');
 });

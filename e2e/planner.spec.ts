@@ -1,12 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
+import { DEFAULT_SUBJECTS } from '../src/types';
+import { createEmptyState } from '../src/lib/planner';
 
 const empty = { version: 2, events: [], goals: [], isDemo: false };
-const defaultCategories = [
-  { id: 'school', label: '학교 수업', color: '#6d8ec7' },
-  { id: 'academy', label: '학원', color: '#9b79cf' },
-  { id: 'academic', label: '학사일정', color: '#db9b4c' },
-  { id: 'personal', label: '개인 일정', color: '#809387' },
-];
 
 async function openEmpty(page: Page) {
   await page.clock.setFixedTime(new Date('2026-10-05T10:00:00+09:00'));
@@ -64,20 +60,21 @@ test('weekly subject goals can be added, edited, completed, isolated by week and
   await page.getByRole('link', { name: '주간 학습 계획', exact: true }).click();
   await page.getByRole('button', { name: '학습 목표 추가', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('combobox', { name: '과목 *', exact: true }).fill('수학');
+  await dialog.locator('#goal-subject').selectOption('수학');
   await dialog.getByLabel('학습자료', { exact: false }).fill('수학 개념서');
   await dialog.getByLabel('학습 범위', { exact: false }).fill('2단원 p. 20–35');
-  await dialog.getByLabel('예상 소요 시간', { exact: false }).fill('90');
+  await expect(dialog.getByLabel('예상 소요 시간', { exact: false })).toHaveCount(0);
   await dialog.getByRole('button', { name: '목표 저장' }).click();
-  await expect(page.locator('.stat-card').nth(1)).toContainText('1시간 30분');
-  await expect(page.locator('.stat-card').nth(2)).toContainText('166시간 30분');
+  await expect(page.locator('.planned-stat .stat-value')).toContainText('0분');
+  await expect(page.locator('.remaining-stat .stat-value')).toContainText('168시간');
   await page.getByRole('checkbox', { name: /수학 개념서/ }).check();
   await expect(page.getByRole('progressbar', { name: '주간 학습 목표 완료율' })).toHaveAttribute('aria-valuenow', '100');
-  await expect(page.locator('.stat-card').nth(1)).toContainText('1시간 30분');
+  await expect(page.locator('.planned-stat .stat-value')).toContainText('0분');
   await page.getByRole('button', { name: '수학 개념서 수정' }).click();
-  await page.getByRole('dialog').getByLabel('예상 소요 시간', { exact: false }).fill('120');
+  await page.getByRole('dialog').getByLabel('학습 범위', { exact: false }).fill('2단원 p. 20–45');
   await page.getByRole('button', { name: '목표 저장' }).click();
-  await expect(page.locator('.stat-card').nth(1)).toContainText('2시간');
+  await expect(page.getByText('2단원 p. 20–45', { exact: true })).toBeVisible();
+  await expect(page.locator('.planned-stat .stat-value')).toContainText('0분');
   await page.getByRole('button', { name: '다음 주', exact: true }).click();
   await expect(page.getByText('나만의 이번 주 목표를 세워 볼까요?')).toBeVisible();
   await page.getByRole('button', { name: '이전 주', exact: true }).click();
@@ -86,7 +83,7 @@ test('weekly subject goals can be added, edited, completed, isolated by week and
   await expect(page.getByRole('checkbox', { name: /수학 개념서/ })).toBeChecked();
   await page.getByRole('button', { name: '수학 개념서 삭제' }).click();
   await page.getByRole('button', { name: '목표 삭제', exact: true }).click();
-  await expect(page.locator('.stat-card').nth(1)).toContainText('0분');
+  await expect(page.locator('.planned-stat .stat-value')).toContainText('0분');
 });
 
 test('calendar always covers 24 hours and midnight schedules persist through editing and deletion', async ({ page }) => {
@@ -150,12 +147,13 @@ test('legacy activity settings migrate to a full day while preserving schedules 
   await expect(page.locator('.available-stat .stat-value')).toContainText('160시간');
   await page.getByRole('link', { name: '주간 학습 계획', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: /기존 수학 교재/ })).toBeChecked();
-  await expect(page.locator('.stat-card').nth(2)).toContainText('158시간 30분');
+  await expect(page.locator('.planned-stat .stat-value')).toContainText('0분');
+  await expect(page.locator('.remaining-stat .stat-value')).toContainText('160시간');
   await page.reload();
   await expect(page.locator('.available-stat .stat-value')).toContainText('160시간');
   await expect(page.getByRole('checkbox', { name: /기존 수학 교재/ })).toBeChecked();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('chagok-planner-v1')!))).toEqual({
-    version: 3, categories: defaultCategories, events: legacy.events, goals: legacy.goals, isDemo: false,
+    version: 3, categories: createEmptyState().categories, subjects: DEFAULT_SUBJECTS, events: legacy.events, goals: legacy.goals, isDemo: false,
   });
 });
 

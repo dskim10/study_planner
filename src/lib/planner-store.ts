@@ -35,7 +35,9 @@ function failureStatus(error: unknown): PlannerStatus {
   return errorCode(error) === 'cloud/conflict' ? 'conflict' : ['unavailable', 'deadline-exceeded', 'auth/network-request-failed'].includes(errorCode(error)) ? 'offline' : 'error';
 }
 function isEmpty(data: PlannerState): boolean {
-  return !data.isDemo && !data.events.length && !data.goals.length && !(data.hiddenCategoryIds?.length) && JSON.stringify(data.categories) === JSON.stringify(createEmptyState().categories);
+  const empty = createEmptyState();
+  const current = readPlannerState(data);
+  return current !== null && !current.isDemo && !current.events.length && !current.goals.length && !(current.hiddenCategoryIds?.length) && JSON.stringify(current.categories) === JSON.stringify(empty.categories) && JSON.stringify(current.subjects) === JSON.stringify(empty.subjects);
 }
 function checkedRemote(remote: RemotePlanner | null): RemotePlanner | null {
   if (remote === null) return null;

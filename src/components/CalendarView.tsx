@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Info, Plus, Repeat2 } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Info, LockKeyhole, Plus, Repeat2 } from 'lucide-react';
 import { type DaySummary, type EventCategory, type ScheduleEvent } from '../types';
 import {
   addDays,
   formatDuration,
   getDaySummary,
+  getStudyPlanSummary,
   minutesToTime,
   parseDate,
   startOfWeek,
@@ -13,15 +14,21 @@ import {
 } from '../lib/planner';
 import './calendar.css';
 import { getRecurrenceSummary } from '../lib/recurrence';
+import { isSubjectCategory } from '../lib/subjects';
+import CategoryOptions from './CategoryOptions';
 
 export interface CalendarViewProps {
   weekStart: string;
   days: DaySummary[];
   events: ScheduleEvent[];
   categories: EventCategory[];
+  subjects: string[];
   hiddenCategoryIds: string[];
+  disabled?: boolean;
   onToggleCategory: (id: string) => void;
   onAddCategory: () => void;
+  onChangeCategoryColor: (id: string, color: string) => string | null;
+  onDeleteCategory: (id: string) => void;
   onAddEvent: (date?: string, time?: string) => void;
   onEditEvent: (event: ScheduleEvent) => void;
   onWeekChange: (weekStart: string) => void;
@@ -75,12 +82,13 @@ function eventDescription(event: ScheduleEvent, date: string, categoryLabel: str
   return `${readableDate(date)}, ${categoryLabel}, ${event.title}, ${event.allDay ? '종일' : `${event.startTime}부터 ${event.endTime}까지`}. 일정 수정`;
 }
 
-function CalendarView({ weekStart, days, events, categories, hiddenCategoryIds, onToggleCategory, onAddCategory, onAddEvent, onEditEvent, onWeekChange }: CalendarViewProps) {
+function CalendarView({ weekStart, days, events, categories, subjects, hiddenCategoryIds, disabled, onToggleCategory, onAddCategory, onChangeCategoryColor, onDeleteCategory, onAddEvent, onEditEvent, onWeekChange }: CalendarViewProps) {
   const [view, setView] = useState<'week' | 'month'>('week');
   const [now, setNow] = useState(() => new Date());
   const [activeSlot, setActiveSlot] = useState<{ date: string; minute: number } | null>(null);
   const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const hiddenCategories = useMemo(() => new Set(hiddenCategoryIds), [hiddenCategoryIds]);
+  const hasSubjectCategories = categories.some(category => isSubjectCategory(category, subjects));
 
   function isEventVisible(event: ScheduleEvent) {
     return !hiddenCategories.has(event.type);
@@ -117,6 +125,7 @@ function CalendarView({ weekStart, days, events, categories, hiddenCategoryIds, 
     return Array.from({ length: 42 }, (_, index) => getDaySummary(addDays(first, index), events));
   }, [monthNumber, monthYear, events]);
   const displayedDays = view === 'week' ? days : monthDays;
+  const plannedByDate = useMemo(() => new Map(getStudyPlanSummary(displayedDays, categories, subjects).days.map(day => [day.date, day.plannedMinutes])), [displayedDays, categories, subjects]);
   const hasDisplayedEvents = displayedDays.some((day) => day.events.length > 0);
   const hasVisibleEvents = displayedDays.some((day) => day.events.some(isEventVisible));
 
@@ -162,23 +171,30 @@ function CalendarView({ weekStart, days, events, categories, hiddenCategoryIds, 
 
       <div className="cal-legend-row">
         <div className="cal-legend" aria-label="일정 유형">
-          {categories.map(({ id, label, color }) => (
+          {categories.map(category => {
+            const { id, label, color } = category;
+            const subjectCategory = isSubjectCategory(category, subjects);
+            return (
             <span key={id}>
               <label className="cal-category-filter">
-                <input type="checkbox" checked={!hiddenCategories.has(id)} onChange={() => onToggleCategory(id)} style={{ accentColor: color }} />
+                <input type="checkbox" checked={!hiddenCategories.has(id)} aria-describedby={subjectCategory ? 'calendar-subject-category-hint' : undefined} onChange={() => onToggleCategory(id)} style={{ accentColor: color }} />
                 <i style={{ backgroundColor: color }} aria-hidden="true" />
                 <span>{label}</span>
               </label>
+              {subjectCategory && <span className="subject-category-lock" role="img" aria-label={`${label}: 이름과 삭제는 과목 관리에서 변경`} title="이름과 삭제는 과목 관리에서 변경"><LockKeyhole size={12} aria-hidden="true" /></span>}
+              <CategoryOptions category={category} compact disabled={disabled} onColorChange={color => onChangeCategoryColor(id, color)} onDelete={subjectCategory ? undefined : () => onDeleteCategory(id)} />
             </span>
-          ))}
+          ); })}
           <span className="cal-legend-free"><i aria-hidden="true" />자습 가능</span>
           <button type="button" className="cal-add-category" onClick={onAddCategory}><Plus size={12} aria-hidden="true" />일정 종류 추가</button>
         </div>
         <span className="cal-click-hint">빈 시간을 눌러 일정을 추가하세요</span>
       </div>
 
+      {hasSubjectCategories && <p className="cal-filter-note cal-subject-category-note" id="calendar-subject-category-hint"><LockKeyhole size={12} aria-hidden="true" /><span>과목 종류의 색상은 옵션에서 변경해요. 이름과 삭제는 주간 학습 계획의 과목 관리에서 변경할 수 있어요.</span></p>}
+
       {hiddenCategoryIds.length > 0 && (
-        <p className="cal-filter-note">체크한 일정 종류만 표시해요. 숨긴 일정도 자습 가능 시간 계산에 포함됩니다.</p>
+        <p className="cal-filter-note">체크한 일정 종류만 표시해요. 숨긴 일정도 자습 가능 시간과 계획한 학습 시간 계산에 포함됩니다.</p>
       )}
 
       {!hasVisibleEvents && (view === 'week' || hasDisplayedEvents) && (
@@ -206,6 +222,7 @@ function CalendarView({ weekStart, days, events, categories, hiddenCategoryIds, 
                   <span className={`cal-availability ${day.availableMinutes === 0 ? 'cal-no-availability' : ''}`} title={day.freeSlots.length ? day.freeSlots.map((slot) => `${minutesToTime(slot.start)}–${minutesToTime(slot.end)}`).join(', ') : '자습 가능한 시간이 없습니다'}>
                     자습 {formatDuration(day.availableMinutes)}
                   </span>
+                  <span className="cal-planned-time">계획 {formatDuration(plannedByDate.get(day.date) ?? 0)}</span>
                 </div>
               ))}
             </div>
@@ -280,6 +297,7 @@ function CalendarView({ weekStart, days, events, categories, hiddenCategoryIds, 
                         <button className="cal-month-add" type="button" aria-label={`${readableDate(day.date)} 일정 추가`} onClick={() => onAddEvent(day.date)}><Plus size={13} /></button>
                       </div>
                       <span className="cal-month-available">자습 {formatDuration(day.availableMinutes)}</span>
+                      <span className="cal-planned-time">계획 {formatDuration(plannedByDate.get(day.date) ?? 0)}</span>
                       <div className="cal-month-events">
                         {visibleEvents.slice(0, 3).map((event) => <button className="cal-month-event cal-event-color" style={eventStyle(event)} type="button" key={event.id} aria-label={eventDescription(event, day.date, getCategory(event).label)} title={`${getCategory(event).label} · ${event.title}`} onClick={() => onEditEvent(event)}><span className="cal-event-dot" aria-hidden="true" /><span>{!event.allDay && <small>{event.startTime} </small>}{event.title}</span></button>)}
                         {visibleEvents.length > 3 && <button className="cal-more-events" type="button" onClick={() => openWeek(day.date)} aria-label={`${readableDate(day.date)} 일정 ${visibleEvents.length}개 모두 보기`}>+{visibleEvents.length - 3}개 더 보기</button>}

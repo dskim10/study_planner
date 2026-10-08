@@ -11,7 +11,9 @@ import {
 } from 'firebase/firestore';
 import { createFirebaseBackend } from '../src/lib/firebase.ts';
 import { createEmptyState } from '../src/lib/planner.ts';
-import { removeCategory } from '../src/lib/categories.ts';
+import { removeCategory, updateCategoryColor } from '../src/lib/categories.ts';
+import { addSubject, renameSubject, removeSubject, syncSubjectCategories } from '../src/lib/subjects.ts';
+import { DEFAULT_EVENT_CATEGORIES, DEFAULT_SUBJECTS } from '../src/types.ts';
 
 const projectId = 'demo-rocky';
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
@@ -178,7 +180,8 @@ describe('Firebase emulator integration', { concurrency: false, timeout: 120_000
     const reference = await seedOwner();
     for (const change of [
       { version: 2 }, { categories: [] }, { events: {} }, { goals: 'bad' },
-      { isDemo: 'false' }, { hiddenCategoryIds: {} }, { activityHours: {} },
+      { isDemo: 'false' }, { hiddenCategoryIds: {} }, { subjects: {} }, { subjects: '수학' },
+      { subjects: null }, { activityHours: {} },
     ]) {
       await assertFails(setDoc(reference, record('owner', 2, { ...completePlanner(), ...change })));
     }
@@ -192,11 +195,153 @@ describe('Firebase emulator integration', { concurrency: false, timeout: 120_000
     await assertFails(setDoc(reference, record('owner', 3, { ...data, events: completePlanner().events })));
   });
 
+  it('accepts legacy planners without a subjects field on create and update', async () => {
+    const reference = plannerReference(environment.authenticatedContext('owner'));
+    const legacy = completePlanner();
+    delete legacy.subjects;
+    await assertSucceeds(setDoc(reference, record('owner', 1, legacy)));
+    assert.deepEqual((await getDocFromServer(reference)).data().data, legacy);
+    legacy.goals[0].completed = false;
+    await assertSucceeds(setDoc(reference, record('owner', 2, legacy)));
+    assert.deepEqual((await getDocFromServer(reference)).data().data, legacy);
+  });
+
+  it('allows an explicit empty subjects list only when no goals remain', async () => {
+    const reference = plannerReference(environment.authenticatedContext('owner'));
+    const invalid = { ...completePlanner(), subjects: [] };
+    await assertFails(setDoc(reference, record('owner', 1, invalid)));
+    const empty = { ...invalid, goals: [] };
+    await assertSucceeds(setDoc(reference, record('owner', 1, empty)));
+    assert.deepEqual((await getDocFromServer(reference)).data().data, empty);
+    await assertFails(setDoc(reference, record('owner', 2, invalid)));
+    assert.equal((await getDocFromServer(reference)).data().revision, 1);
+  });
+
+  it('rejects older-client saves that would erase subjects after a legacy planner is upgraded', async () => {
+    const reference = plannerReference(environment.authenticatedContext('owner'));
+    const legacy = completePlanner();
+    delete legacy.subjects;
+    await assertSucceeds(setDoc(reference, record('owner', 1, legacy)));
+    await assertSucceeds(setDoc(reference, record('owner', 2, legacy)));
+    const upgraded = { ...legacy, subjects: ['수학', '독서'] };
+    await assertSucceeds(setDoc(reference, record('owner', 3, upgraded)));
+    await assertFails(setDoc(reference, record('owner', 4, legacy)));
+    const retained = await getDocFromServer(reference);
+    assert.equal(retained.data().revision, 3);
+    assert.deepEqual(retained.data().data, upgraded);
+    const changed = { ...upgraded, subjects: ['수학', '미술'] };
+    await assertSucceeds(setDoc(reference, record('owner', 4, changed)));
+    assert.deepEqual((await getDocFromServer(reference)).data().data, changed);
+  });
+
+  it('preserves an intentional empty subject list against an older-client save', async () => {
+    const reference = plannerReference(environment.authenticatedContext('owner'));
+    const empty = { ...createEmptyState(), subjects: [] };
+    await assertSucceeds(setDoc(reference, record('owner', 1, empty)));
+    const olderClient = { ...empty };
+    delete olderClient.subjects;
+    await assertFails(setDoc(reference, record('owner', 2, olderClient)));
+    assert.deepEqual((await getDocFromServer(reference)).data().data, empty);
+    const reset = createEmptyState();
+    await assertSucceeds(setDoc(reference, record('owner', 2, reset)));
+    assert.deepEqual((await getDocFromServer(reference)).data().data, reset);
+  });
+
+  it('restores subjects and goals without estimates after rename, transfer, and removing all subjects', async () => {
+    const subject = `google-subjects-${runId}`;
+    const first = await makeClient(subject);
+    const uid = first.auth.currentUser.uid;
+    let original = addSubject(createEmptyState(), '독서');
+    assert.deepEqual(original.subjects, [...DEFAULT_SUBJECTS, '독서']);
+    let mathCategory = original.categories.find((category) => category.label === '수학');
+    const readingCategory = original.categories.find((category) => category.label === '독서');
+    assert.ok(mathCategory && readingCategory);
+    assert.throws(() => removeCategory(original, mathCategory.id), /과목/);
+    original.hiddenCategoryIds = [mathCategory.id];
+    original.events.push({
+      id: 'subject-series', title: '수학 공부', type: mathCategory.id, date: '2026-10-05',
+      startTime: '17:00', endTime: '18:00', allDay: false, recurrence: 'weekly', weekdays: [1, 3],
+    });
+    const beforeColor = original;
+    original = updateCategoryColor(original, mathCategory.id, '#12AbCd');
+    mathCategory = original.categories.find((category) => category.id === mathCategory.id);
+    assert.equal(mathCategory.color, '#12abcd');
+    assert.deepEqual(original.events, beforeColor.events);
+    assert.deepEqual(original.hiddenCategoryIds, beforeColor.hiddenCategoryIds);
+    original.goals.push(
+      { id: 'math', weekStart: '2026-10-05', subject: '수학', material: '개념서', range: '1장', completed: false },
+      { id: 'reading', weekStart: '2026-10-12', subject: '독서', material: '소설', range: '2장', completed: true },
+    );
+    await first.backend.save(uid, original, 0);
+    const second = await makeClient(subject);
+    const restored = await second.backend.load(uid);
+    assert.deepEqual(restored, { data: original, revision: 1 });
+    assert.ok(restored.data.goals.every((goal) => !Object.hasOwn(goal, 'estimatedMinutes')));
+
+    const renamed = renameSubject(restored.data, '수학', '수학 심화');
+    await second.backend.save(uid, renamed, 1);
+    assert.deepEqual(await first.backend.load(uid), { data: renamed, revision: 2 });
+    assert.equal(renamed.goals[0].subject, '수학 심화');
+    assert.equal(renamed.subjects.includes('수학'), false);
+    assert.deepEqual(renamed.categories.find((category) => category.id === mathCategory.id), { ...mathCategory, label: '수학 심화' });
+    assert.deepEqual(renamed.events, original.events);
+    assert.deepEqual(renamed.hiddenCategoryIds, original.hiddenCategoryIds);
+
+    const moved = removeSubject(renamed, '독서', '수학 심화');
+    await first.backend.save(uid, moved, 2);
+    assert.deepEqual(await second.backend.load(uid), { data: moved, revision: 3 });
+    assert.ok(moved.goals.every((goal) => goal.subject === '수학 심화'));
+    assert.equal(moved.subjects.includes('독서'), false);
+    assert.deepEqual(moved.categories.find((category) => category.id === readingCategory.id), readingCategory);
+    assert.doesNotThrow(() => removeCategory(moved, readingCategory.id));
+
+    const empty = moved.subjects.reduce((data, name) => removeSubject(data, name), moved);
+    await second.backend.save(uid, empty, 3);
+    await first.backend.logout();
+    await signInWithCredential(first.auth, GoogleAuthProvider.credential(unsignedGoogleToken(subject)));
+    assert.deepEqual(await first.backend.load(uid), { data: empty, revision: 4 });
+    assert.deepEqual(empty.subjects, []);
+    assert.deepEqual(empty.goals, []);
+    assert.deepEqual(empty.events, original.events);
+    assert.deepEqual(empty.categories, renamed.categories);
+  });
+
+  it('repairs missing subject categories consistently across SDK instances and saves the same IDs and colors', async () => {
+    const subject = `google-subject-migration-${runId}`;
+    const first = await makeClient(subject);
+    const second = await makeClient(subject);
+    const uid = first.auth.currentUser.uid;
+    const existing = { id: 'existing-math', label: '수학', color: '#123456' };
+    const unsynced = {
+      ...createEmptyState(),
+      subjects: [...DEFAULT_SUBJECTS, '독서'],
+      categories: [...DEFAULT_EVENT_CATEGORIES, existing],
+      hiddenCategoryIds: [existing.id],
+    };
+    const reference = doc(first.db, 'users', uid, 'planner', 'main');
+    await setDoc(reference, record(uid, 1, unsynced));
+    const expected = syncSubjectCategories(unsynced);
+    const firstRead = await first.backend.load(uid);
+    const secondRead = await second.backend.load(uid);
+    assert.deepEqual(firstRead, { data: expected, revision: 1 });
+    assert.deepEqual(secondRead, firstRead);
+    assert.equal(expected.categories.length, DEFAULT_EVENT_CATEGORIES.length + expected.subjects.length);
+    assert.deepEqual(expected.categories.find((category) => category.label === '수학'), existing);
+    for (const name of expected.subjects) {
+      assert.equal(expected.categories.filter((category) => category.label === name).length, 1);
+    }
+    await first.backend.save(uid, firstRead.data, firstRead.revision);
+    await second.backend.logout();
+    await signInWithCredential(second.auth, GoogleAuthProvider.credential(unsignedGoogleToken(subject)));
+    assert.deepEqual(await second.backend.load(uid), { data: expected, revision: 2 });
+    assert.deepEqual((await getDocFromServer(reference)).data().data, expected);
+  });
+
   it('restores category transfers and deleting the last category on another device', async () => {
     const subject = `google-categories-${runId}`;
     const first = await makeClient(subject);
     const uid = first.auth.currentUser.uid;
-    const original = completePlanner();
+    const original = { ...completePlanner(), subjects: [], goals: [] };
     await first.backend.save(uid, original, 0);
     const moved = removeCategory(original, 'custom-reading', 'school');
     await first.backend.save(uid, moved, 1);

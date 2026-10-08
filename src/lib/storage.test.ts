@@ -1,15 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { createDemoState, createEmptyState, getWeekSummary } from './planner';
 import { isPlannerState, readPlannerState, STORAGE_KEY } from './storage';
-import { DEFAULT_EVENT_CATEGORIES } from '../types';
+import { DEFAULT_EVENT_CATEGORIES, DEFAULT_SUBJECTS } from '../types';
 import { createCustomRecurrence } from './recurrence';
 import { removeCategory } from './categories';
+import { isSubjectCategory, syncSubjectCategories } from './subjects';
 
-const sample = () => createDemoState('2026-10-05');
+const sample = () => {
+  const state = createDemoState('2026-10-05');
+  // Keep this fixture readable by legacy versions, which only knew default categories.
+  state.categories = DEFAULT_EVENT_CATEGORIES.map((category) => ({ ...category }));
+  state.events = state.events.filter((event) => state.categories.some((category) => category.id === event.type));
+  return syncSubjectCategories(state);
+};
 
 describe('stored planner data validation', () => {
   it('accepts a JSON round trip of both the fictional example and empty state', () => {
-    for (const state of [sample(), createEmptyState()]) {
+    for (const state of [sample(), createDemoState('2026-10-05'), createEmptyState()]) {
       const restored: unknown = JSON.parse(JSON.stringify(state));
       expect(isPlannerState(restored)).toBe(true);
     }
@@ -58,12 +65,14 @@ describe('stored planner data validation', () => {
     const original = sample();
     const removed = removeCategory(removeCategory(original, 'school', 'academy'), 'academic');
     expect(readPlannerState(JSON.parse(JSON.stringify(removed)))).toEqual(removed);
-    expect(removed.categories.map((item) => item.id)).toEqual(['academy', 'personal']);
+    expect(removed.categories.filter((item) => !isSubjectCategory(item, removed.subjects!)).map((item) => item.id)).toEqual(['academy', 'personal']);
     expect(removed.goals).toEqual(original.goals);
   });
 
   it('round-trips a planner with no categories or events without resurrecting defaults', () => {
     const original = sample();
+    original.subjects = [];
+    original.goals = [];
     original.hiddenCategoryIds = original.categories.map((item) => item.id);
     const removed = original.categories.reduce((current, item) => removeCategory(current, item.id), original);
     const restored = readPlannerState(JSON.parse(JSON.stringify(removed)));
@@ -82,7 +91,7 @@ describe('stored planner data validation', () => {
       undefined, null, {}, [], [null], [{ id: 'school', label: 3, color: '#6d8ec7' }],
       [...state.categories, { id: 'exercise', label: '운동', color: 'red' }],
       [...state.categories, { id: 'exercise', label: '  ', color: '#2d8c72' }],
-      [...state.categories, { id: 'exercise', label: '가'.repeat(31), color: '#2d8c72' }],
+      [...state.categories, { id: 'exercise', label: '가'.repeat(41), color: '#2d8c72' }],
       [...state.categories, { id: ' ', label: '운동', color: '#2d8c72' }],
       [...state.categories, { id: 'school', label: '운동', color: '#2d8c72' }],
       [...state.categories, { id: 'duplicate', label: ' 학교 수업 ', color: '#2d8c72' }],
@@ -237,7 +246,7 @@ describe('stored planner data migration', () => {
     const legacy = { version: 2, events, goals, isDemo };
     const original = structuredClone(legacy);
     const restored = readPlannerState(legacy);
-    expect(restored).toEqual({ version: 3, categories: DEFAULT_EVENT_CATEGORIES, events, goals, isDemo });
+    expect(restored).toEqual({ ...createEmptyState(), events, goals, isDemo });
     expect(legacy).toEqual(original);
     restored!.categories[0].label = '다른 이름';
     expect(readPlannerState(legacy)!.categories[0].label).toBe('학교 수업');
@@ -259,5 +268,71 @@ describe('stored planner data migration', () => {
       { ...legacy, events: [{ ...legacy.events[0], endTime: '24:01' }] },
       { ...legacy, goals: [{ ...legacy.goals[0], material: '' }] },
     ]) expect(readPlannerState(value)).toBeNull();
+  });
+});
+
+describe('saved subjects and legacy goal estimates', () => {
+  it('adds only subject categories to an old empty category list and keeps intentionally removed defaults absent', () => {
+    const state = { ...createEmptyState(), categories: [], subjects: ['수학'] };
+    const original = structuredClone(state);
+    const restored = readPlannerState(state)!;
+    expect(restored.categories.map((category) => category.label)).toEqual(['수학']);
+    expect(restored.categories.some((category) => category.id === 'school')).toBe(false);
+    expect(readPlannerState(JSON.parse(JSON.stringify(restored)))).toEqual(restored);
+    expect(state).toEqual(original);
+  });
+
+  it('validates raw event references before adding missing categories', () => {
+    const state = { ...createEmptyState(), categories: [], subjects: ['수학'] };
+    const generated = syncSubjectCategories(state).categories[0];
+    expect(readPlannerState({ ...state, events: [{ ...sample().events[0], type: generated.id }] })).toBeNull();
+  });
+
+  it('adds default and normalized-unique existing goal subjects when the list is missing in every supported version', () => {
+    const state = sample();
+    const goals = [
+      { ...state.goals[0], id: 'first', subject: '  Reading  ', estimatedMinutes: 75 },
+      { ...state.goals[0], id: 'second', weekStart: '2026-10-12', subject: 'ＲＥＡＤＩＮＧ', estimatedMinutes: 30 },
+      { ...state.goals[0], id: 'default', subject: '수학' },
+    ];
+    for (const version of [1, 2, 3]) {
+      const legacy = { ...state, version, subjects: undefined, goals };
+      const original = structuredClone(legacy);
+      const restored = readPlannerState(legacy);
+      expect(restored?.subjects).toEqual([...DEFAULT_SUBJECTS, 'Reading']);
+      expect(restored?.goals).toEqual(goals);
+      expect(restored?.events).toEqual(state.events);
+      expect(legacy).toEqual(original);
+    }
+  });
+
+  it('round-trips explicit empty subjects without resurrecting defaults and rejects orphaned goals', () => {
+    const state = { ...createEmptyState(), subjects: [] };
+    expect(readPlannerState(JSON.parse(JSON.stringify(state)))).toEqual(state);
+    expect(isPlannerState({ ...state, goals: [sample().goals[0]] })).toBe(false);
+    expect(readPlannerState({ ...state, goals: [sample().goals[0]] })).toBeNull();
+  });
+
+  it('rejects malformed and untrimmed subject lists and normalized duplicates without repairing data', () => {
+    for (const subjects of [null, {}, '수학', [null], [1], [''], ['  '], [' 수학'], ['수학 '], ['가'.repeat(41)], ['수학', '수학'], ['Reading', 'ＲＥＡＤＩＮＧ']]) {
+      const state = { ...createEmptyState(), subjects };
+      expect(isPlannerState(state)).toBe(false);
+      expect(readPlannerState(state)).toBeNull();
+    }
+  });
+
+  it('requires goal subjects to match registered names after normalization', () => {
+    const state = { ...sample(), subjects: ['Reading'], goals: [{ ...sample().goals[0], subject: ' ｒｅａｄｉｎｇ ' }] };
+    expect(readPlannerState(state)).toEqual(syncSubjectCategories(state));
+    expect(readPlannerState({ ...state, subjects: ['국어'] })).toBeNull();
+  });
+
+  it('accepts new goals without estimates while retaining valid old estimates exactly', () => {
+    const state = sample();
+    expect(state.goals.every((goal) => !Object.hasOwn(goal, 'estimatedMinutes'))).toBe(true);
+    expect(readPlannerState(state)).toEqual(state);
+    const legacy = { ...state, goals: state.goals.map((goal) => ({ ...goal, estimatedMinutes: 121 })) };
+    expect(readPlannerState(legacy)?.goals).toEqual(legacy.goals);
+    expect(readPlannerState({ ...state, goals: [{ ...state.goals[0], estimatedMinutes: null }] })).toBeNull();
   });
 });

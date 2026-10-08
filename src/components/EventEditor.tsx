@@ -1,17 +1,18 @@
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Plus, Repeat2, Trash2 } from 'lucide-react';
+import { LockKeyhole, Plus, Repeat2, Trash2 } from 'lucide-react';
 import type { CustomRecurrence, EventCategory, RecurrenceMode, ScheduleEvent } from '../types';
 import { minutesToTime, parseDate, timeToMinutes } from '../lib/planner';
 import { createCustomRecurrence, getRecurrenceSummary, validateCustomRecurrence } from '../lib/recurrence';
+import { isSubjectCategory } from '../lib/subjects';
 import Modal from './Modal';
 import CategoryCreator from './CategoryCreator';
 import CustomRecurrenceDialog from './CustomRecurrenceDialog';
 import './event-editor.css';
 
-interface Props { event?: ScheduleEvent; date: string; time?: string; categories: EventCategory[]; onAddCategory: (category: EventCategory) => string | null; onSave: (event: ScheduleEvent) => void; onDelete: (id: string) => void; onClose: () => void }
+interface Props { event?: ScheduleEvent; date: string; time?: string; categories: EventCategory[]; subjects: string[]; onAddCategory: (category: EventCategory) => string | null; onSave: (event: ScheduleEvent) => void; onDelete: (id: string) => void; onClose: () => void }
 
-export default function EventEditor({ event, date, time = '09:00', categories, onAddCategory, onSave, onDelete, onClose }: Props) {
+export default function EventEditor({ event, date, time = '09:00', categories, subjects, onAddCategory, onSave, onDelete, onClose }: Props) {
   const [draft, setDraft] = useState<ScheduleEvent>(() => event ?? { id: crypto.randomUUID(), title: '', type: categories[0]?.id ?? '', date, startTime: time, endTime: minutesToTime(Math.min(timeToMinutes(time) + 60, 1440)), allDay: false, recurrence: 'none', weekdays: [parseDate(date).getDay()] });
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -20,6 +21,7 @@ export default function EventEditor({ event, date, time = '09:00', categories, o
   const recurrenceSelect = useRef<HTMLSelectElement>(null);
   const categoryChoices = useRef<HTMLDivElement>(null);
   const hasValidCategory = categories.some(category => category.id === draft.type);
+  const hasSubjectCategories = categories.some(category => isSubjectCategory(category, subjects));
   function finishCategory(category?: EventCategory) {
     if (category) update('type', category.id);
     setAddingCategory(false);
@@ -75,7 +77,10 @@ export default function EventEditor({ event, date, time = '09:00', categories, o
     <form onSubmit={submit}>
       <div className="modal-body form-stack">
         <label className="field">일정 이름<input className="input" autoFocus required maxLength={80} placeholder="예: 학교 수업, 수학 학원" value={draft.title} onChange={e => update('title', e.target.value)} /></label>
-        <fieldset className="field"><legend>일정 종류</legend>{categories.length === 0 && <p className="form-hint">등록된 일정 종류가 없어요. 아래에서 종류를 먼저 추가해 주세요.</p>}<div className="type-options" ref={categoryChoices}>{categories.map(category => <button type="button" key={category.id} aria-pressed={draft.type === category.id} className={`type-option ${draft.type === category.id ? 'selected' : ''}`} onClick={() => update('type', category.id)}><span className="color-dot" style={{ background: category.color }} />{category.label}</button>)}{!addingCategory && <button type="button" className="type-option category-add-trigger" onClick={() => setAddingCategory(true)}><Plus size={13} />종류 추가</button>}</div>{addingCategory && <div className="category-inline"><h3>새 일정 종류</h3><CategoryCreator onAddCategory={onAddCategory} onCreated={finishCategory} onCancel={() => finishCategory()} /></div>}</fieldset>
+        <fieldset className="field"><legend>일정 종류</legend>{categories.length === 0 && <p className="form-hint">등록된 일정 종류가 없어요. 아래에서 종류를 먼저 추가해 주세요.</p>}<div className="type-options" ref={categoryChoices}>{categories.map(category => {
+          const subjectCategory = isSubjectCategory(category, subjects);
+          return <button type="button" key={category.id} aria-pressed={draft.type === category.id} aria-describedby={subjectCategory ? 'event-subject-category-hint' : undefined} className={`type-option ${draft.type === category.id ? 'selected' : ''}`} onClick={() => update('type', category.id)}><span className="color-dot" style={{ background: category.color }} /><span className="type-option-label">{category.label}</span>{subjectCategory && <LockKeyhole className="type-option-lock" size={11} aria-hidden="true" />}</button>;
+        })}{!addingCategory && <button type="button" className="type-option category-add-trigger" onClick={() => setAddingCategory(true)}><Plus size={13} />종류 추가</button>}</div>{hasSubjectCategories && <p className="form-hint" id="event-subject-category-hint">과목 종류의 이름과 삭제는 주간 학습 계획의 과목 관리에서, 색상은 캘린더의 종류 옵션에서 변경해요. 이 종류의 일정은 여기서 추가·수정·삭제할 수 있어요.</p>}{addingCategory && <div className="category-inline"><h3>새 일정 종류</h3><CategoryCreator onAddCategory={onAddCategory} onCreated={finishCategory} onCancel={() => finishCategory()} /></div>}</fieldset>
         <label className="field">{draft.recurrence !== 'none' ? '반복 시작일' : '날짜'}<input className="input" required type="date" min="1900-01-01" max="9999-12-31" value={draft.date} onChange={e => update('date', e.target.value)} /></label>
         <label className="check-label"><input type="checkbox" checked={draft.allDay} onChange={e => update('allDay', e.target.checked)} />종일 일정 <span>이날은 자습 가능 시간에서 제외해요.</span></label>
         {!draft.allDay && <><div className="form-row"><label className="field">시작 시간<input required className="input" type="time" value={draft.startTime} onChange={e => update('startTime', e.target.value)} /></label><label className="field">종료 시간<input required className="input" type="time" aria-describedby="event-midnight-hint" value={draft.endTime === '24:00' ? '00:00' : draft.endTime} onChange={e => update('endTime', e.target.value === '00:00' ? '24:00' : e.target.value)} /></label></div><p className="form-hint" id="event-midnight-hint">종료 시간의 00:00은 선택한 날짜가 끝나는 자정(24:00)이에요.</p></>}

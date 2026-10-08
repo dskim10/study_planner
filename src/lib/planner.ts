@@ -1,6 +1,7 @@
-import type { DaySummary, PlannerState, ScheduleEvent, StudyGoal } from '../types';
-import { DEFAULT_EVENT_CATEGORIES } from '../types';
+import type { DaySummary, EventCategory, PlannerState, ScheduleEvent, StudyGoal, StudyPlanSummary } from '../types';
+import { DEFAULT_EVENT_CATEGORIES, DEFAULT_SUBJECTS } from '../types';
 import { occursOn } from './recurrence';
+import { normalizeSubjectName, syncSubjectCategories } from './subjects';
 
 export { occursOn } from './recurrence';
 
@@ -108,15 +109,45 @@ export function getWeekSummary(weekStart: string, events: ScheduleEvent[]): DayS
 export function getGoalSummary(goals: StudyGoal[], weekStart: string) {
   const weekGoals = goals.filter((goal) => goal.weekStart === startOfWeek(weekStart));
   return {
-    plannedMinutes: weekGoals.reduce((sum, goal) => sum + goal.estimatedMinutes, 0),
-    completedMinutes: weekGoals.reduce((sum, goal) => sum + (goal.completed ? goal.estimatedMinutes : 0), 0),
     completedCount: weekGoals.filter((goal) => goal.completed).length,
     totalCount: weekGoals.length,
   };
 }
 
+function mergedMinutes(intervals: { start: number; end: number }[]): number {
+  const ordered = [...intervals].sort((left, right) => left.start - right.start);
+  let total = 0;
+  let end = 0;
+  for (const interval of ordered) {
+    total += Math.max(0, interval.end - Math.max(end, interval.start));
+    end = Math.max(end, interval.end);
+  }
+  return total;
+}
+
+/** Calendar category names match registered subjects; overlaps count once per day. */
+export function getStudyPlanSummary(days: DaySummary[], categories: EventCategory[], subjects: string[]): StudyPlanSummary {
+  const categoryNames = new Map(categories.map((category) => [category.id, normalizeSubjectName(category.label)]));
+  const subjectIndexes = new Map(subjects.map((subject, index) => [normalizeSubjectName(subject), index]));
+  const subjectTotals = subjects.map((subject) => ({ subject, plannedMinutes: 0 }));
+  const dayTotals = days.map((day) => {
+    const intervals: { start: number; end: number }[] = [];
+    const perSubject = subjects.map(() => [] as { start: number; end: number }[]);
+    for (const event of day.events) {
+      const subject = subjectIndexes.get(categoryNames.get(event.type) ?? '');
+      if (subject === undefined) continue;
+      const interval = event.allDay ? { start: 0, end: MINUTES_PER_DAY } : { start: timeToMinutes(event.startTime), end: timeToMinutes(event.endTime) };
+      intervals.push(interval);
+      perSubject[subject].push(interval);
+    }
+    perSubject.forEach((intervalsForSubject, index) => { subjectTotals[index].plannedMinutes += mergedMinutes(intervalsForSubject); });
+    return { date: day.date, plannedMinutes: mergedMinutes(intervals) };
+  });
+  return { plannedMinutes: dayTotals.reduce((total, day) => total + day.plannedMinutes, 0), subjects: subjectTotals, days: dayTotals };
+}
+
 export function createEmptyState(): PlannerState {
-  return { version: 3, categories: DEFAULT_EVENT_CATEGORIES.map((category) => ({ ...category })), events: [], goals: [], isDemo: false };
+  return syncSubjectCategories({ version: 3, categories: DEFAULT_EVENT_CATEGORIES.map((category) => ({ ...category })), subjects: [...DEFAULT_SUBJECTS], events: [], goals: [], isDemo: false });
 }
 
 /** Fictional example data is relative to the student's current local week. */
@@ -136,18 +167,28 @@ export function createDemoState(today: string): PlannerState {
     weekly('demo-breakfast', '아침 식사 · 하루 준비', 'personal', '07:00', '07:30', [0, 1, 2, 3, 4, 5, 6]),
     weekly('demo-commute', '등교', 'personal', '08:00', '08:30', [1, 2, 3, 4, 5]),
     weekly('demo-dinner', '저녁 식사 · 휴식', 'personal', '18:00', '19:00', [0, 1, 2, 3, 4, 5, 6]),
+    weekly('demo-study-math', '수학 문제 풀이', 'study-math', '21:00', '22:00', [1, 3, 5]),
+    weekly('demo-study-english', '영어 단어와 독해', 'study-english', '21:00', '22:00', [2, 4]),
+    weekly('demo-study-korean', '국어 작품 정리', 'study-korean', '14:00', '15:30', [6]),
+    weekly('demo-study-science', '과학 개념 복습', 'study-science', '14:00', '15:30', [0]),
     {
       id: 'demo-exam', title: '전국 모의고사', type: 'academic', date: addDays(weekStart, 9),
       startTime: '08:00', endTime: '18:00', allDay: true, recurrence: 'none', weekdays: [],
     },
   ];
   const goals: StudyGoal[] = [
-    { id: 'demo-goal-math-1', weekStart, subject: '수학', material: '수학 개념서', range: '수열 개념 정리 · p. 42–61', estimatedMinutes: 180, completed: true },
-    { id: 'demo-goal-math-2', weekStart, subject: '수학', material: '유형별 문제집', range: '등차수열 · 기본 문제 1–40번', estimatedMinutes: 240, completed: false },
-    { id: 'demo-goal-english-1', weekStart, subject: '영어', material: '영어 단어장', range: 'Day 11–15 · 매일 30개 복습', estimatedMinutes: 150, completed: false },
-    { id: 'demo-goal-english-2', weekStart, subject: '영어', material: '독해 기출 모음', range: '빈칸 추론 3개년 · 12지문', estimatedMinutes: 180, completed: false },
-    { id: 'demo-goal-korean', weekStart, subject: '국어', material: '문학 작품집', range: '현대시 4작품 · 핵심 내용 정리', estimatedMinutes: 180, completed: false },
-    { id: 'demo-goal-science', weekStart, subject: '과학', material: '통합과학 개념 노트', range: '생명 시스템 · 2단원 복습', estimatedMinutes: 150, completed: false },
+    { id: 'demo-goal-math-1', weekStart, subject: '수학', material: '수학 개념서', range: '수열 개념 정리 · p. 42–61', completed: true },
+    { id: 'demo-goal-math-2', weekStart, subject: '수학', material: '유형별 문제집', range: '등차수열 · 기본 문제 1–40번', completed: false },
+    { id: 'demo-goal-english-1', weekStart, subject: '영어', material: '영어 단어장', range: 'Day 11–15 · 매일 30개 복습', completed: false },
+    { id: 'demo-goal-english-2', weekStart, subject: '영어', material: '독해 기출 모음', range: '빈칸 추론 3개년 · 12지문', completed: false },
+    { id: 'demo-goal-korean', weekStart, subject: '국어', material: '문학 작품집', range: '현대시 4작품 · 핵심 내용 정리', completed: false },
+    { id: 'demo-goal-science', weekStart, subject: '과학', material: '통합과학 개념 노트', range: '생명 시스템 · 2단원 복습', completed: false },
   ];
-  return { ...createEmptyState(), events, goals, isDemo: true };
+  const categories = [...DEFAULT_EVENT_CATEGORIES.map((category) => ({ ...category })),
+    { id: 'study-math', label: '수학', color: '#647DBB' },
+    { id: 'study-english', label: '영어', color: '#9B79CF' },
+    { id: 'study-korean', label: '국어', color: '#D39365' },
+    { id: 'study-science', label: '과학', color: '#5B9984' },
+  ];
+  return syncSubjectCategories({ ...createEmptyState(), categories, events, goals, isDemo: true });
 }
