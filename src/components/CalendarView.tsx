@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Info, LockKeyhole, Plus, Repeat2 } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Info, LockKeyhole, Plus, Printer, Repeat2 } from 'lucide-react';
 import { type DaySummary, type EventCategory, type ScheduleEvent } from '../types';
 import {
   addDays,
@@ -16,6 +16,7 @@ import './calendar.css';
 import { getRecurrenceSummary } from '../lib/recurrence';
 import { isSubjectCategory } from '../lib/subjects';
 import CategoryOptions from './CategoryOptions';
+import CalendarPrintPreview from './CalendarPrintPreview';
 import { CALENDAR_STEP_MINUTES, formatSelectionTimeRange, getPointerMinute, getSelectionRange } from '../lib/calendar-selection';
 
 export interface CalendarViewProps {
@@ -108,6 +109,7 @@ function eventDescription(event: ScheduleEvent, date: string, categoryLabel: str
 
 function CalendarView({ weekStart, days, events, categories, subjects, hiddenCategoryIds, disabled, onToggleCategory, onAddCategory, onChangeCategoryColor, onDeleteCategory, onAddEvent, onEditEvent, onWeekChange }: CalendarViewProps) {
   const [view, setView] = useState<'week' | 'month'>('week');
+  const [printOpen, setPrintOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [activeSlot, setActiveSlot] = useState<{ date: string; minute: number } | null>(null);
   const [selection, setSelection] = useState<SelectionPreview | null>(null);
@@ -134,7 +136,9 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
   useEffect(() => {
     clearGesture();
     return () => { clearGesture(); };
-  }, [weekStart, view, disabled, clearGesture]);
+  }, [weekStart, view, disabled, printOpen, clearGesture]);
+
+  useEffect(() => { setPrintOpen(false); }, [weekStart, view]);
 
   useEffect(() => {
     const cancel = () => { clearGesture(); };
@@ -163,7 +167,7 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
   function beginSelection(event: PointerEvent<HTMLDivElement>, date: string) {
     lastPointerType.current = event.pointerType;
     if (event.isPrimary && event.button === 0) suppressPointerClick.current = false;
-    if (disabled || event.pointerType !== 'mouse' || !event.isPrimary || event.button !== 0) return;
+    if (disabled || printOpen || event.pointerType !== 'mouse' || !event.isPrimary || event.button !== 0) return;
     const target = event.target as HTMLElement;
     if (target.closest('.cal-event') || (target !== event.currentTarget && !target.closest('.cal-empty-slot'))) return;
     clearGesture();
@@ -195,7 +199,7 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
     const dragged = gesture.dragging || Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) >= 4;
     const range = getSelectionRange(gesture.anchor, getPointerMinute(event.clientY, rect.top, rect.height, true));
     clearGesture();
-    if (disabled || view !== 'week' || gesture.weekStart !== weekStart) return;
+    if (disabled || printOpen || view !== 'week' || gesture.weekStart !== weekStart) return;
     if (dragged) onAddEvent(gesture.date, minutesToTime(range.start), minutesToTime(range.end));
     else onAddEvent(gesture.date, minutesToTime(gesture.anchor));
   }
@@ -296,9 +300,12 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
           <h2>{view === 'week' ? '주간 시간표' : '월간 캘린더'}</h2>
           <span className="cal-timezone">{timezone}</span>
         </div>
-        <div className="cal-view-switch" aria-label="캘린더 보기">
-          <button type="button" aria-pressed={view === 'week'} className={view === 'week' ? 'is-active' : ''} onClick={() => setView('week')}>주간</button>
-          <button type="button" aria-pressed={view === 'month'} className={view === 'month' ? 'is-active' : ''} onClick={() => setView('month')}>월간</button>
+        <div className="cal-toolbar-actions">
+          {view === 'week' && <button type="button" className="button button-secondary cal-print-button" onClick={() => { clearGesture(); setPrintOpen(true); }}><Printer size={14} />프린트</button>}
+          <div className="cal-view-switch" aria-label="캘린더 보기">
+            <button type="button" aria-pressed={view === 'week'} className={view === 'week' ? 'is-active' : ''} onClick={() => setView('week')}>주간</button>
+            <button type="button" aria-pressed={view === 'month'} className={view === 'month' ? 'is-active' : ''} onClick={() => setView('month')}>월간</button>
+          </div>
         </div>
       </div>
 
@@ -445,6 +452,7 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
         </>
       )}
       <div className="cal-footer"><Info size={14} aria-hidden="true" /><span>자습 가능 시간은 하루 24시간에서 등록한 일정을 제외한 시간이에요.</span></div>
+      {printOpen && view === 'week' && <CalendarPrintPreview key={weekStart} weekStart={weekStart} days={days} categories={categories} hiddenCategoryIds={hiddenCategoryIds} onClose={() => setPrintOpen(false)} />}
     </section>
   );
 }

@@ -3,6 +3,9 @@
 .cal-toolbar-heading { display: flex; align-items: center; gap: 9px; color: #767386; }
 .cal-toolbar-heading h2 { margin: 0; font-size: 15px; font-weight: 700; color: var(--text, #282938); letter-spacing: -.4px; }
 .cal-timezone { margin-left: 5px; font-size: 10px; color: #a3a1b0; font-weight: 500; }
+.cal-toolbar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.cal-print-button.button { min-height: 30px; padding: 5px 10px; font-size: 11px; }
+@media (max-width: 600px) { .cal-toolbar { flex-wrap: wrap; }.cal-toolbar-actions { margin-left: auto; }.cal-print-button.button { padding: 5px 8px; font-size: 10px; } }
 .cal-view-switch { display: flex; padding: 3px; border: 1px solid #eeeeF4; border-radius: 7px; background: #f7f7fa; }
 .cal-view-switch button { border: 0; border-radius: 5px; background: transparent; color: #8b879d; padding: 5px 16px; font-size: 11px; font-weight: 600; cursor: pointer; }
 .cal-view-switch button.is-active { background: #fff; box-shadow: 0 1px 4px #2526440d; color: #7661cb; }

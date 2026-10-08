@@ -31,11 +31,11 @@
 .goal-print-paper-footer { display: flex; justify-content: space-between; gap: 5mm; flex-shrink: 0; margin-top: 4mm; padding-top: 2mm; border-top: .2mm solid #aaa; color: #555; font-size: 8pt; line-height: 1.5; }
 .goal-print-measure { position: fixed; left: -100000px; top: 0; visibility: hidden; pointer-events: none; z-index: -1; }
 @media (max-width: 600px) { .goal-print-preview-body { padding: 14px 12px 18px; }.goal-print-modal .modal-header { padding: 18px 18px 14px; }.goal-print-modal .modal-header h2 { font-size: 17px; }.goal-print-modal .modal-footer { padding: 14px 18px; }.goal-print-modal .modal-footer .button { font-size: 11px; padding: 8px 11px; } }
-@page { size: A4 portrait; margin: 12mm; }
+@page goal-print { size: A4 portrait; margin: 12mm; }
 @media print {
   html:has(body.goal-print-mode), body.goal-print-mode { width: auto !important; min-width: 0 !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; background: #fff !important; }
   body.goal-print-mode > :not(.goal-print-portal) { display: none !important; }
-  .goal-print-portal { display: block !important; position: static !important; width: 186mm !important; margin: 0 !important; padding: 0 !important; }
+  .goal-print-portal { page: goal-print; display: block !important; position: static !important; width: 186mm !important; margin: 0 !important; padding: 0 !important; }
   .goal-print-portal .modal-backdrop { display: block !important; position: static !important; inset: auto !important; padding: 0 !important; overflow: visible !important; background: transparent !important; backdrop-filter: none !important; }
   .goal-print-modal.modal { display: block !important; position: static !important; width: 186mm !important; max-width: none !important; max-height: none !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; animation: none !important; }
   .goal-print-modal > .modal-header, .goal-print-modal > .modal-footer, .goal-print-preview-status, .goal-print-error, .goal-print-measure { display: none !important; }
