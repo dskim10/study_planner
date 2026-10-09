@@ -1,7 +1,7 @@
 import type { DaySummary, EventCategory, PlannerState, ScheduleEvent, StudyGoal, StudyPlanSummary } from '../types';
 import { DEFAULT_EVENT_CATEGORIES, DEFAULT_SUBJECTS } from '../types';
 import { occursOn } from './recurrence';
-import { normalizeSubjectName, syncSubjectCategories } from './subjects';
+import { isSubjectCategory, normalizeSubjectName, syncSubjectCategories } from './subjects';
 
 export { occursOn } from './recurrence';
 
@@ -67,43 +67,41 @@ export function formatDuration(minutes: number): string {
   return minutes < 0 && total > 0 ? `-${label}` : label;
 }
 
-export function getDaySummary(date: string, events: ScheduleEvent[]): DaySummary {
+/** Subject schedules use study capacity without reducing it; free slots exclude every schedule. */
+export function getDaySummary(date: string, events: ScheduleEvent[], categories: EventCategory[] = [], subjects: string[] = []): DaySummary {
   const start = 0;
   const end = MINUTES_PER_DAY;
   const dayEvents = events.filter((event) => occursOn(event, date)).sort((a, b) =>
     Number(b.allDay) - Number(a.allDay) || a.startTime.localeCompare(b.startTime) || a.title.localeCompare(b.title, 'ko'),
   );
   const totalMinutes = end - start;
-  if (dayEvents.some((event) => event.allDay)) {
-    return { date, availableMinutes: 0, busyMinutes: totalMinutes, events: dayEvents, freeSlots: [] };
-  }
-
+  const subjectCategoryIds = new Set(categories.filter((category) => isSubjectCategory(category, subjects)).map((category) => category.id));
   const intervals = dayEvents.map((event) => ({
-    start: Math.max(start, timeToMinutes(event.startTime)),
-    end: Math.min(end, timeToMinutes(event.endTime)),
+    start: event.allDay ? start : Math.max(start, timeToMinutes(event.startTime)),
+    end: event.allDay ? end : Math.min(end, timeToMinutes(event.endTime)),
+    fixed: !subjectCategoryIds.has(event.type),
   })).filter((interval) => interval.end > interval.start).sort((a, b) => a.start - b.start);
+  const busyMinutes = mergedMinutes(intervals.filter((interval) => interval.fixed));
 
   const merged: { start: number; end: number }[] = [];
   for (const interval of intervals) {
     const previous = merged[merged.length - 1];
     if (previous && interval.start <= previous.end) previous.end = Math.max(previous.end, interval.end);
-    else merged.push({ ...interval });
+    else merged.push({ start: interval.start, end: interval.end });
   }
 
   const freeSlots: DaySummary['freeSlots'] = [];
   let cursor = start;
-  let busyMinutes = 0;
   for (const interval of merged) {
     if (interval.start > cursor) freeSlots.push({ start: cursor, end: interval.start });
-    busyMinutes += interval.end - interval.start;
     cursor = interval.end;
   }
   if (cursor < end) freeSlots.push({ start: cursor, end });
   return { date, availableMinutes: totalMinutes - busyMinutes, busyMinutes, events: dayEvents, freeSlots };
 }
 
-export function getWeekSummary(weekStart: string, events: ScheduleEvent[]): DaySummary[] {
-  return getWeekDays(weekStart).map((date) => getDaySummary(date, events));
+export function getWeekSummary(weekStart: string, events: ScheduleEvent[], categories: EventCategory[] = [], subjects: string[] = []): DaySummary[] {
+  return getWeekDays(weekStart).map((date) => getDaySummary(date, events, categories, subjects));
 }
 
 export function getGoalSummary(goals: StudyGoal[], weekStart: string) {

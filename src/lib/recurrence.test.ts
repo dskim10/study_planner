@@ -11,6 +11,48 @@ const custom = (date: string, rule: Partial<CustomRecurrence> = {}): ScheduleEve
   date, recurrence: 'custom', customRecurrence: { ...createCustomRecurrence(date), ...rule },
 });
 
+describe('excluded recurring dates', () => {
+  it.each([
+    ['daily', event({ recurrence: 'daily' }), '2026-10-06', '2026-10-07'],
+    ['weekly', event({ recurrence: 'weekly', weekdays: [1, 3] }), '2026-10-07', '2026-10-12'],
+    ['monthly', event({ date: '2026-01-31', recurrence: 'monthly' }), '2026-03-31', '2026-05-31'],
+    ['weekdays', event({ recurrence: 'weekdays' }), '2026-10-09', '2026-10-12'],
+  ] as const)('omits only the chosen date in %s recurrence', (_mode, original, excluded, retained) => {
+    const changed = { ...original, excludedDates: [excluded] };
+    expect(occursOn(original, excluded)).toBe(true);
+    expect(occursOn(changed, excluded)).toBe(false);
+    expect(occursOn(changed, retained)).toBe(true);
+    expect(occursOn(changed, original.date)).toBe(true);
+  });
+
+  it.each([
+    ['day', custom('2026-10-05', { unit: 'day', interval: 2 }), '2026-10-07', '2026-10-09', '2026-10-11'],
+    ['week', custom('2026-10-07', { interval: 2, weekdays: [1, 3, 5] }), '2026-10-09', '2026-10-19', '2026-10-21'],
+    ['month date', custom('2026-01-31', { unit: 'month' }), '2026-03-31', '2026-05-31', '2026-07-31'],
+    ['month nth weekday', custom('2026-03-30', { unit: 'month', monthPattern: 'nthWeekday' }), '2026-06-29', '2026-08-31', '2026-11-30'],
+    ['month last weekday', custom('2026-10-05', { unit: 'month', monthPattern: 'lastWeekday' }), '2026-11-30', '2026-12-28', '2027-01-25'],
+    ['year', custom('2096-02-29', { unit: 'year' }), '2104-02-29', '2108-02-29', '2112-02-29'],
+  ] as const)('retains the original count and inclusive end for custom %s exclusions', (_unit, original, excluded, last, beyond) => {
+    const counted = { ...original, excludedDates: [excluded], customRecurrence: {
+      ...original.customRecurrence!, end: { type: 'count' as const, count: 3 },
+    } };
+    expect(occursOn(counted, excluded)).toBe(false);
+    expect(occursOn(counted, last)).toBe(true);
+    expect(occursOn(counted, beyond)).toBe(false);
+    const until = { ...counted, customRecurrence: { ...counted.customRecurrence, end: { type: 'until' as const, date: last } } };
+    expect(occursOn(until, excluded)).toBe(false);
+    expect(occursOn(until, last)).toBe(true);
+    expect(occursOn(until, beyond)).toBe(false);
+  });
+
+  it('does not extend a preset end date after deleting the last occurrence', () => {
+    const daily = event({ recurrence: 'daily', repeatUntil: '2026-10-07', excludedDates: ['2026-10-07'] });
+    expect(occursOn(daily, '2026-10-06')).toBe(true);
+    expect(occursOn(daily, '2026-10-07')).toBe(false);
+    expect(occursOn(daily, '2026-10-08')).toBe(false);
+  });
+});
+
 describe('recurrence presets', () => {
   it('matches every day, including weekends, only within inclusive boundaries', () => {
     const daily = event({ recurrence: 'daily', repeatUntil: '2026-10-11' });

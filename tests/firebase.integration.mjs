@@ -11,6 +11,8 @@ import {
 } from 'firebase/firestore';
 import { createFirebaseBackend } from '../src/lib/firebase.ts';
 import { createEmptyState } from '../src/lib/planner.ts';
+import { deleteEvent, saveEvent } from '../src/lib/event-occurrences.ts';
+import { occursOn } from '../src/lib/recurrence.ts';
 import { removeCategory, updateCategoryColor } from '../src/lib/categories.ts';
 import { addSubject, moveSubject, renameSubject, removeSubject, syncSubjectCategories } from '../src/lib/subjects.ts';
 import { DEFAULT_EVENT_CATEGORIES, DEFAULT_SUBJECTS } from '../src/types.ts';
@@ -30,10 +32,12 @@ function completePlanner() {
   const data = createEmptyState();
   data.categories.push({ id: 'custom-reading', label: '독서 모임', color: '#3A7DAA' });
   data.hiddenCategoryIds = ['custom-reading'];
+  data.calendarPrintRange = { startMinute: 480, endMinute: 1320 };
   data.events.push({
     id: 'custom-repeating-event', title: '함께 읽기', type: 'custom-reading', date: '2026-10-05',
     startTime: '17:00', endTime: '18:00', allDay: false, recurrence: 'custom', weekdays: [1, 3],
     customRecurrence: { interval: 2, unit: 'week', weekdays: [1, 3], monthPattern: 'dayOfMonth', end: { type: 'count', count: 10 } },
+    excludedDates: ['2026-10-07'],
   });
   data.goals.push({
     id: 'goal-math', weekStart: '2026-10-05', subject: '수학', material: '수학 개념서', range: '수열 1–20번',
@@ -185,6 +189,46 @@ describe('Firebase emulator integration', { concurrency: false, timeout: 120_000
     ]) {
       await assertFails(setDoc(reference, record('owner', 2, { ...completePlanner(), ...change })));
     }
+  });
+
+  it('accepts legacy print settings and protects saved preferences from older clients', async () => {
+    const reference = plannerReference(environment.authenticatedContext('owner'));
+    const original = completePlanner();
+    delete original.calendarPrintRange;
+    await assertSucceeds(setDoc(reference, record('owner', 1, original)));
+    assert.deepEqual((await getDocFromServer(reference)).data().data, original);
+    let revision = 1;
+    await assertSucceeds(setDoc(reference, record('owner', ++revision, original)));
+    for (const calendarPrintRange of [
+      { startMinute: 0, endMinute: 1440 }, { startMinute: 485, endMinute: 1325 }, { startMinute: 1439, endMinute: 1440 },
+    ]) {
+      const data = { ...original, calendarPrintRange };
+      await assertSucceeds(setDoc(reference, record('owner', ++revision, data)));
+      assert.deepEqual((await getDocFromServer(reference)).data().data, data);
+    }
+    await assertFails(setDoc(reference, record('owner', revision + 1, original)));
+    assert.equal((await getDocFromServer(reference)).data().revision, revision);
+    const defaults = { ...createEmptyState(), calendarPrintRange: { startMinute: 0, endMinute: 1440 } };
+    await assertSucceeds(setDoc(reference, record('owner', ++revision, defaults)));
+    assert.deepEqual((await getDocFromServer(reference)).data().data, defaults);
+    await assertFails(setDoc(reference, record('owner', revision + 1, createEmptyState())));
+  });
+
+  it('rejects malformed print ranges without overwriting the saved preference', async () => {
+    const reference = await seedOwner();
+    for (const calendarPrintRange of [
+      null, [], '08:00-22:00', {}, { startMinute: 0 }, { endMinute: 1440 },
+      { startMinute: '0', endMinute: 1440 }, { startMinute: 0, endMinute: '1440' },
+      { startMinute: -1, endMinute: 1440 }, { startMinute: 0, endMinute: 1441 },
+      { startMinute: 1440, endMinute: 1440 }, { startMinute: 600, endMinute: 600 },
+      { startMinute: 600, endMinute: 599 }, { startMinute: 0.5, endMinute: 1440 },
+      { startMinute: 0, endMinute: 1439.5 }, { startMinute: 0, endMinute: 1440, extra: true },
+    ]) {
+      await assertFails(setDoc(reference, record('owner', 2, { ...completePlanner(), calendarPrintRange })));
+    }
+    const retained = await getDocFromServer(reference);
+    assert.equal(retained.data().revision, 1);
+    assert.deepEqual(retained.data().data, completePlanner());
   });
 
   it('allows zero categories only when no schedules remain', async () => {
@@ -414,6 +458,35 @@ describe('Firebase emulator integration', { concurrency: false, timeout: 120_000
     assert.deepEqual(await client.backend.load(uid), { data, revision: 1 });
   });
 
+  it('restores a moved occurrence and deleted occurrences after relogin and on another device', async () => {
+    const subject = `google-occurrences-${runId}`;
+    const client = await makeClient(subject);
+    const uid = client.auth.currentUser.uid;
+    const original = completePlanner();
+    await client.backend.save(uid, original, 0);
+    const series = original.events[0];
+    const edited = saveEvent(original.events, { ...series, title: '이번 모임만 변경', date: '2026-10-20', startTime: '19:00', endTime: '20:30' }, { eventId: series.id, date: '2026-10-19' });
+    const data = { ...original, events: deleteEvent(edited, series.id, '2026-10-21') };
+    assert.deepEqual(data.events[0].excludedDates, ['2026-10-07', '2026-10-19', '2026-10-21']);
+    await client.backend.save(uid, data, 1);
+    const stored = await getDocFromServer(doc(client.db, 'users', uid, 'planner', 'main'));
+    assert.deepEqual(stored.data().data, data);
+    await client.backend.logout();
+    await signInWithCredential(client.auth, GoogleAuthProvider.credential(unsignedGoogleToken(subject)));
+    assert.deepEqual(await client.backend.load(uid), { data, revision: 2 });
+
+    const second = await makeClient(subject);
+    const restored = await second.backend.load(uid);
+    assert.deepEqual(restored, { data, revision: 2 });
+    for (const date of ['2026-10-07', '2026-10-19', '2026-10-21']) {
+      assert.equal(occursOn(restored.data.events[0], date), false);
+    }
+    assert.equal(occursOn(restored.data.events[0], '2026-11-02'), true);
+    assert.equal(occursOn(restored.data.events[1], '2026-10-20'), true);
+    assert.equal(restored.data.events[1].recurrence, 'none');
+    assert.notEqual(restored.data.events[1].id, series.id);
+  });
+
   it('restores the server planner into an independent SDK instance with an empty memory cache', async () => {
     const subject = `google-device-${runId}`;
     const first = await makeClient(subject);
@@ -425,6 +498,35 @@ describe('Firebase emulator integration', { concurrency: false, timeout: 120_000
     assert.notEqual(first.db, second.db);
     assert.equal(second.auth.currentUser.uid, uid);
     assert.deepEqual(await second.backend.load(uid), { data, revision: 1 });
+  });
+
+  it('syncs print preferences across relogin and devices while keeping another account isolated', async () => {
+    const subject = `google-print-range-${runId}`;
+    const otherSubject = `google-print-range-other-${runId}`;
+    const first = await makeClient(subject);
+    const uid = first.auth.currentUser.uid;
+    const other = await makeClient(otherSubject);
+    const otherUid = other.auth.currentUser.uid;
+    const original = completePlanner();
+    const otherData = { ...completePlanner(), calendarPrintRange: { startMinute: 600, endMinute: 1200 } };
+    await first.backend.save(uid, original, 0);
+    await other.backend.save(otherUid, otherData, 0);
+    const updated = { ...original, calendarPrintRange: { startMinute: 420, endMinute: 1440 } };
+    assert.deepEqual(await first.backend.save(uid, updated, 1), { data: updated, revision: 2 });
+    assert.deepEqual((await getDocFromServer(doc(first.db, 'users', uid, 'planner', 'main'))).data().data, updated);
+
+    await first.backend.logout();
+    await signInWithCredential(first.auth, GoogleAuthProvider.credential(unsignedGoogleToken(otherSubject)));
+    assert.equal(first.auth.currentUser.uid, otherUid);
+    assert.deepEqual(await first.backend.load(otherUid), { data: otherData, revision: 1 });
+    await assert.rejects(first.backend.load(uid), { code: 'permission-denied' });
+    await first.backend.logout();
+    await signInWithCredential(first.auth, GoogleAuthProvider.credential(unsignedGoogleToken(subject)));
+    assert.deepEqual(await first.backend.load(uid), { data: updated, revision: 2 });
+    const second = await makeClient(subject);
+    assert.notEqual(second.db, first.db);
+    assert.deepEqual(await second.backend.load(uid), { data: updated, revision: 2 });
+    assert.deepEqual(await other.backend.load(otherUid), { data: otherData, revision: 1 });
   });
 
   it('detects stale revisions without overwriting the newer server planner', async () => {

@@ -63,7 +63,7 @@ export default function CategoryDeleteDialog({ category, categories, events, onC
               <span>등록된 일정 {eventCount}개와 모든 반복 일정 삭제에 동의합니다</span>
             </label>
           </>}
-          {mode === 'delete' && <p className="category-delete-warning">삭제한 일정은 되돌릴 수 없어요. 해당 시간은 자습 가능 시간에 다시 포함됩니다.</p>}
+          {mode === 'delete' && <p className="category-delete-warning">삭제한 일정은 되돌릴 수 없어요. 남은 일정에 맞춰 자습 가능 시간을 다시 계산해요.</p>}
         </>}
         {eventCount === 0 && <p className="form-hint">필요하면 나중에 일정 종류를 다시 추가할 수 있어요.</p>}
         {error && <p role="alert" className="form-error">{error}</p>}

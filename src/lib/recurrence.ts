@@ -163,6 +163,8 @@ export function occursOn(event: ScheduleEvent, dateKey: string): boolean {
   if (!start || !date) return false;
   if (event.recurrence === 'none') return event.date === dateKey;
   if (dateKey < event.date) return false;
+  // Omission never changes the original rule's occurrence numbers or end date.
+  if (event.excludedDates?.includes(dateKey)) return false;
   if (event.recurrence === 'custom') {
     const rule = event.customRecurrence;
     if (!rule || validateCustomRecurrence(rule, event.date)) return false;

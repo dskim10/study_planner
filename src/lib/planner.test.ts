@@ -6,6 +6,7 @@ import {
   getGoalSummary, getStudyPlanSummary, getWeekDays, getWeekSummary, minutesToTime, occursOn, parseDate, startOfWeek,
   timeToMinutes, toDateKey,
 } from './planner';
+import { addSubject, removeSubject, renameSubject } from './subjects';
 
 const monday = '2026-10-05';
 const event = (overrides: Partial<ScheduleEvent> = {}): ScheduleEvent => ({
@@ -214,6 +215,119 @@ describe('available self-study time', () => {
   });
 });
 
+describe('study capacity and remaining unscheduled time', () => {
+  const categories = [
+    { id: 'math', label: ' 수학 ', color: '#112233' },
+    { id: 'english', label: 'ＥＮＧＬＩＳＨ', color: '#223344' },
+    { id: 'school', label: '학교 수업', color: '#334455' },
+    { id: 'personal', label: '개인 일정', color: '#445566' },
+  ];
+  const subjects = ['수학', 'English'];
+
+  it('deducts only the fixed union while retaining all events, planned totals and genuinely free intervals', () => {
+    const events = [
+      event({ id: 'school', startTime: '09:00', endTime: '12:00' }),
+      event({ id: 'personal', type: 'personal', startTime: '11:00', endTime: '13:00' }),
+      event({ id: 'math', type: 'math', startTime: '12:00', endTime: '15:00' }),
+      event({ id: 'english', type: 'english', startTime: '14:00', endTime: '16:00' }),
+    ];
+    const original = structuredClone(events);
+    const before = getWeekSummary(monday, events);
+    const days = getWeekSummary(monday, events, categories, subjects);
+    expect(days[0]).toEqual({ date: monday, availableMinutes: 1200, busyMinutes: 240, events,
+      freeSlots: [{ start: 0, end: 540 }, { start: 960, end: 1440 }],
+    });
+    expect(days.reduce((total, day) => total + day.availableMinutes, 0)).toBe(10080 - 240);
+    expect(getStudyPlanSummary(days, categories, subjects)).toEqual(getStudyPlanSummary(before, categories, subjects));
+    expect(getStudyPlanSummary(days, categories, subjects).plannedMinutes).toBe(240);
+    // Fixed/study overlap prevents computing actual free time by simple subtraction.
+    expect(days[0].freeSlots.reduce((total, slot) => total + slot.end - slot.start, 0)).toBe(1020);
+    expect(events).toEqual(original);
+  });
+
+  it('matches only registered category names using whitespace, NFKC and case normalization', () => {
+    const events = [
+      event({ id: 'math', type: 'math', startTime: '00:00', endTime: '01:00' }),
+      event({ id: 'english', type: 'english', startTime: '02:00', endTime: '03:00' }),
+      event({ id: 'unknown', type: 'unknown', title: '수학', startTime: '23:59', endTime: '24:00' }),
+    ];
+    const day = getDaySummary(monday, events, categories, [' 수학 ', 'english']);
+    expect(day.busyMinutes).toBe(1);
+    expect(day.availableMinutes).toBe(1439);
+    expect(day.freeSlots).toEqual([{ start: 60, end: 120 }, { start: 180, end: 1439 }]);
+    expect(getStudyPlanSummary([day], categories, [' 수학 ', 'english']).plannedMinutes).toBe(120);
+    expect(getDaySummary(monday, events, categories, []).busyMinutes).toBe(121);
+    expect(getDaySummary(monday, events, [], subjects).busyMinutes).toBe(121);
+    expect(getDaySummary(monday, events).busyMinutes).toBe(121);
+  });
+
+  it('preserves capacity for all-day study but blocks every remaining slot', () => {
+    const study = event({ id: 'study', type: 'math', allDay: true });
+    const day = getDaySummary(monday, [study], categories, subjects);
+    expect(day).toMatchObject({ availableMinutes: 1440, busyMinutes: 0, freeSlots: [] });
+    expect(getStudyPlanSummary([day], categories, subjects).plannedMinutes).toBe(1440);
+    const fixed = event({ id: 'fixed' });
+    const mixed = getDaySummary(monday, [study, fixed], categories, subjects);
+    expect(mixed).toMatchObject({ availableMinutes: 1380, busyMinutes: 60, freeSlots: [] });
+    expect(mixed.events).toEqual([study, fixed]);
+    expect(getStudyPlanSummary([mixed], categories, subjects).plannedMinutes).toBe(1440);
+    expect(getDaySummary(monday, [study, { ...fixed, allDay: true }], categories, subjects))
+      .toMatchObject({ availableMinutes: 0, busyMinutes: 1440, freeSlots: [] });
+  });
+
+  it('applies recurrence exclusions and original count boundaries to both kinds of schedules', () => {
+    const events = [
+      event({ id: 'fixed', startTime: '00:00', endTime: '00:30', recurrence: 'custom', excludedDates: ['2026-10-07'], customRecurrence: {
+        interval: 2, unit: 'day', weekdays: [], monthPattern: 'dayOfMonth', end: { type: 'count', count: 3 },
+      } }),
+      event({ id: 'study', type: 'math', startTime: '23:59', endTime: '24:00', recurrence: 'custom', excludedDates: ['2026-10-06'], customRecurrence: {
+        interval: 1, unit: 'day', weekdays: [], monthPattern: 'dayOfMonth', end: { type: 'count', count: 3 },
+      } }),
+    ];
+    const days = getWeekSummary(monday, events, categories, subjects);
+    expect(days.map((day) => day.busyMinutes)).toEqual([30, 0, 0, 0, 30, 0, 0]);
+    expect(days.map((day) => day.availableMinutes)).toEqual([1410, 1440, 1440, 1440, 1410, 1440, 1440]);
+    expect(days.map((day) => day.freeSlots.reduce((total, slot) => total + slot.end - slot.start, 0)))
+      .toEqual([1409, 1440, 1439, 1440, 1410, 1440, 1440]);
+    expect(getStudyPlanSummary(days, categories, subjects).days.map((day) => day.plannedMinutes)).toEqual([1, 0, 1, 0, 0, 0, 0]);
+    expect(getWeekSummary('2026-10-12', events, categories, subjects).every((day) => day.availableMinutes === 1440 && !day.events.length)).toBe(true);
+  });
+
+  it('includes hidden fixed schedules in deductions and hidden subjects only in planned and occupied time', () => {
+    const state = { ...createEmptyState(), categories, subjects, hiddenCategoryIds: ['math', 'school'], events: [
+      event({ id: 'fixed' }), event({ id: 'study', type: 'math', startTime: '11:00', endTime: '13:00' }),
+    ] };
+    const hidden = getWeekSummary(monday, state.events, state.categories, state.subjects);
+    expect(hidden[0]).toMatchObject({ busyMinutes: 60, availableMinutes: 1380 });
+    expect(hidden[0].events).toHaveLength(2);
+    expect(getStudyPlanSummary(hidden, categories, subjects).plannedMinutes).toBe(120);
+    state.hiddenCategoryIds = [];
+    expect(getWeekSummary(monday, state.events, state.categories, state.subjects)).toEqual(hidden);
+  });
+
+  it('updates capacity when subjects are added, renamed into an existing category and removed', () => {
+    const state = { ...createEmptyState(), subjects: [], categories: [
+      { id: 'math', label: '수학', color: '#112233' }, { id: 'reading', label: '독서', color: '#223344' },
+    ], events: [
+      event({ id: 'math-event', type: 'math', startTime: '09:00', endTime: '11:00' }),
+      event({ id: 'reading-event', type: 'reading', startTime: '12:00', endTime: '12:30' }),
+    ] };
+    expect(getDaySummary(monday, state.events, state.categories, state.subjects).availableMinutes).toBe(1290);
+    const added = addSubject(state, '수학');
+    expect(added.events).toEqual(state.events);
+    expect(getDaySummary(monday, added.events, added.categories, added.subjects).availableMinutes).toBe(1410);
+    const renamed = renameSubject(added, '수학', '독서');
+    expect(renamed.events.map((item) => item.type)).toEqual(['reading', 'reading']);
+    const renamedDay = getDaySummary(monday, renamed.events, renamed.categories, renamed.subjects);
+    expect(renamedDay.availableMinutes).toBe(1440);
+    expect(getStudyPlanSummary([renamedDay], renamed.categories, renamed.subjects!).plannedMinutes).toBe(150);
+    const removed = removeSubject(renamed, '독서');
+    expect(removed.events).toEqual(renamed.events);
+    expect(getDaySummary(monday, removed.events, removed.categories, removed.subjects).availableMinutes).toBe(1290);
+    expect(getDaySummary(monday, removed.events, removed.categories, removed.subjects).freeSlots).toEqual(renamedDay.freeSlots);
+  });
+});
+
 describe('weekly learning goals and state', () => {
   it('counts completed goals independently of legacy durations and excludes other weeks', () => {
     const goals = [goal(), goal({ id: 'done', completed: true, estimatedMinutes: 150 }), goal({ id: 'next', weekStart: '2026-10-12', estimatedMinutes: 300 })];
@@ -265,7 +379,7 @@ describe('calendar study time by registered subject', () => {
   const subjects = ['수학', 'English', '과학'];
 
   it('counts normalized category matches only and includes subjects without goals or events', () => {
-    const days = getWeekSummary(monday, [event({ type: 'math' }), event({ id: 'other', type: 'school', endTime: '17:00' })]);
+    const days = getWeekSummary(monday, [event({ type: 'math' }), event({ id: 'other', type: 'school', endTime: '17:00' })], categories, subjects);
     expect(getStudyPlanSummary(days, categories, subjects)).toEqual({
       plannedMinutes: 60,
       subjects: [{ subject: '수학', plannedMinutes: 60 }, { subject: 'English', plannedMinutes: 0 }, { subject: '과학', plannedMinutes: 0 }],
@@ -281,7 +395,7 @@ describe('calendar study time by registered subject', () => {
       event({ id: 'b', type: 'math', startTime: '10:00', endTime: '12:00' }),
       event({ id: 'c', type: 'english', startTime: '11:00', endTime: '13:00' }),
       event({ id: 'd', type: 'english', startTime: '13:00', endTime: '14:00' }),
-    ]);
+    ], categories, subjects);
     const original = structuredClone(days);
     expect(getStudyPlanSummary(days, categories, subjects)).toMatchObject({
       plannedMinutes: 300, subjects: [{ subject: '수학', plannedMinutes: 180 }, { subject: 'English', plannedMinutes: 180 }, { subject: '과학', plannedMinutes: 0 }],
@@ -291,31 +405,32 @@ describe('calendar study time by registered subject', () => {
 
   it('counts recurring occurrences through their inclusive end and the final midnight minute', () => {
     const events = [event({ type: 'math', recurrence: 'weekly', weekdays: [1, 3, 5], repeatUntil: '2026-10-07', startTime: '23:59', endTime: '24:00' })];
-    const summary = getStudyPlanSummary(getWeekSummary(monday, events), categories, subjects);
+    const summary = getStudyPlanSummary(getWeekSummary(monday, events, categories, subjects), categories, subjects);
     expect(summary.plannedMinutes).toBe(2);
     expect(summary.days.map((day) => day.plannedMinutes)).toEqual([1, 0, 1, 0, 0, 0, 0]);
-    expect(getStudyPlanSummary(getWeekSummary('2026-10-12', events), categories, subjects).plannedMinutes).toBe(0);
+    expect(getStudyPlanSummary(getWeekSummary('2026-10-12', events, categories, subjects), categories, subjects).plannedMinutes).toBe(0);
   });
 
   it('respects actual custom recurrence counts, monthly skips and leap dates', () => {
     const events = [event({ type: 'math', date: '2026-01-31', recurrence: 'custom', customRecurrence: { interval: 1, unit: 'month', weekdays: [], monthPattern: 'dayOfMonth', end: { type: 'count', count: 2 } } })];
-    expect(getStudyPlanSummary(getWeekSummary('2026-02-23', events), categories, subjects).plannedMinutes).toBe(0);
-    expect(getStudyPlanSummary(getWeekSummary('2026-03-30', events), categories, subjects).plannedMinutes).toBe(60);
-    expect(getStudyPlanSummary(getWeekSummary('2026-05-25', events), categories, subjects).plannedMinutes).toBe(0);
+    expect(getStudyPlanSummary(getWeekSummary('2026-02-23', events, categories, subjects), categories, subjects).plannedMinutes).toBe(0);
+    expect(getStudyPlanSummary(getWeekSummary('2026-03-30', events, categories, subjects), categories, subjects).plannedMinutes).toBe(60);
+    expect(getStudyPlanSummary(getWeekSummary('2026-05-25', events, categories, subjects), categories, subjects).plannedMinutes).toBe(0);
     const leap = [event({ type: 'math', date: '2024-02-29', recurrence: 'custom', customRecurrence: { interval: 1, unit: 'year', weekdays: [], monthPattern: 'dayOfMonth', end: { type: 'never' } } })];
-    expect(getStudyPlanSummary(getWeekSummary('2025-02-24', leap), categories, subjects).plannedMinutes).toBe(0);
-    expect(getStudyPlanSummary(getWeekSummary('2028-02-28', leap), categories, subjects).plannedMinutes).toBe(60);
+    expect(getStudyPlanSummary(getWeekSummary('2025-02-24', leap, categories, subjects), categories, subjects).plannedMinutes).toBe(0);
+    expect(getStudyPlanSummary(getWeekSummary('2028-02-28', leap, categories, subjects), categories, subjects).plannedMinutes).toBe(60);
   });
 
   it('counts all-day matches as one full day and includes hidden category schedules', () => {
     const state = { ...createEmptyState(), categories, subjects, hiddenCategoryIds: ['math', 'english'], events: [
       event({ type: 'math', allDay: true }), event({ id: 'overlap', type: 'english', startTime: '00:00', endTime: '24:00' }),
     ] };
-    const days = getWeekSummary(monday, state.events);
+    const days = getWeekSummary(monday, state.events, state.categories, state.subjects);
     expect(getStudyPlanSummary(days, state.categories, state.subjects)).toMatchObject({ plannedMinutes: 1440, subjects: [
       { subject: '수학', plannedMinutes: 1440 }, { subject: 'English', plannedMinutes: 1440 }, { subject: '과학', plannedMinutes: 0 },
     ] });
-    expect(days[0].availableMinutes).toBe(0);
+    expect(days[0].availableMinutes).toBe(1440);
+    expect(days[0].freeSlots).toEqual([]);
     expect(getStudyPlanSummary(days, state.categories, state.subjects)).toEqual(getStudyPlanSummary(days, categories, subjects));
   });
 });

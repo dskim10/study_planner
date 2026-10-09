@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { DaySummary, EventCategory, ScheduleEvent } from '../types';
+import type { CalendarPrintRange, DaySummary, EventCategory, ScheduleEvent } from '../types';
 import { buildPrintableWeek } from './calendar-print';
+import { DEFAULT_CALENDAR_PRINT_RANGE, getCalendarPrintTicks, isCalendarPrintRange } from './calendar-print-range';
 import { getWeekSummary } from './planner';
 
 const monday = '2026-10-05';
@@ -127,5 +128,110 @@ describe('printable weekly calendar', () => {
     expect(() => placed([event('backward', '10:00', '09:00')])).toThrow(RangeError);
     expect(() => placed([event('zero', '24:00', '24:00')])).toThrow(RangeError);
     expect(() => placed([event('invalid', '25:00', '26:00')])).toThrow();
+  });
+});
+
+describe('weekly calendar print time range', () => {
+  const range = { startMinute: 480, endMinute: 1080 };
+  const inRange = (events: ScheduleEvent[], selectedRange = range) => buildPrintableWeek([day(events)], categories, [], selectedRange)[0].timed;
+
+  it('omits schedules outside the range and at its open boundaries before assigning columns', () => {
+    const items = inRange([
+      event('before', '00:00', '07:00'), event('ends-at-start', '07:00', '08:00'),
+      event('inside', '08:00', '18:00'), event('starts-at-end', '18:00', '19:00'),
+      event('after', '23:00', '24:00'),
+    ]);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ event: { id: 'inside' }, topMinute: 480, heightMinutes: 600, column: 0, columnCount: 1 });
+  });
+
+  it('clips partial and spanning events while preserving their actual time labels and source data', () => {
+    const events = [event('early', '07:00', '09:00'), event('late', '17:00', '23:00'), event('spans', '00:00', '24:00')];
+    const source = structuredClone(events);
+    const items = inRange(events);
+    const early = items.find(item => item.event.id === 'early');
+    const late = items.find(item => item.event.id === 'late');
+    const spanning = items.find(item => item.event.id === 'spans');
+    expect(early).toMatchObject({ startMinute: 420, endMinute: 540, topMinute: 480, heightMinutes: 60 });
+    expect(late).toMatchObject({ startMinute: 1020, endMinute: 1380, topMinute: 1020, heightMinutes: 60 });
+    expect(spanning).toMatchObject({ startMinute: 0, endMinute: 1440, topMinute: 480, heightMinutes: 600 });
+    expect(items.every(item => item.columnCount === 2)).toBe(true);
+    expect(early?.column).toBe(late?.column);
+    expect(events).toEqual(source);
+  });
+
+  it('keeps minimum-height edge blocks in the range and uses their visual overlap for columns', () => {
+    const items = inRange([
+      event('early', '08:45', '09:05'), event('late', '09:40', '10:00'),
+      event('outside', '09:45', '10:00'),
+    ], { startMinute: 540, endMinute: 585 });
+    expect(items.map(item => [item.event.id, item.topMinute, item.heightMinutes, item.column, item.columnCount])).toEqual([
+      ['early', 540, 30, 0, 2], ['late', 555, 30, 1, 2],
+    ]);
+    expect(items.map(item => [item.startMinute, item.endMinute])).toEqual([[525, 545], [580, 600]]);
+  });
+
+  it('caps blocks to very short print ranges including the last minute of the day', () => {
+    for (const selectedRange of [{ startMinute: 540, endMinute: 555 }, { startMinute: 1439, endMinute: 1440 }]) {
+      const items = inRange([event('full-day', '00:00', '24:00')], selectedRange);
+      expect(items[0]).toMatchObject({
+        startMinute: 0, endMinute: 1440, topMinute: selectedRange.startMinute,
+        heightMinutes: selectedRange.endMinute - selectedRange.startMinute,
+      });
+    }
+  });
+
+  it('retains all-day items, category visibility, recurring occurrences and excluded dates without changing totals', () => {
+    const days = getWeekSummary(monday, [
+      event('recurring', '07:30', '08:30', { recurrence: 'daily', excludedDates: ['2026-10-06'], repeatUntil: '2026-10-07' }),
+      event('all-day', '00:00', '24:00', { allDay: true }),
+      event('hidden-timed', '08:00', '09:00', { type: 'school' }),
+      event('hidden-all-day', '00:00', '24:00', { type: 'school', allDay: true }),
+    ]);
+    const original = structuredClone(days);
+    const printed = buildPrintableWeek(days, categories, ['school'], range);
+    expect(printed.filter(item => item.timed.length).map(item => item.date)).toEqual(['2026-10-05', '2026-10-07']);
+    expect(printed[0].timed[0]).toMatchObject({ event: { id: 'recurring' }, startMinute: 450, topMinute: 480, heightMinutes: 30 });
+    expect(printed[0].allDay.map(item => item.event.id)).toEqual(['all-day']);
+    expect(days).toEqual(original);
+    expect(days[0].availableMinutes).toBe(0);
+  });
+
+  it('keeps all seven days when no timed schedules intersect and retains full-day defaults', () => {
+    const days = getWeekSummary(monday, [event('sleep', '00:00', '07:00')]);
+    expect(buildPrintableWeek(days, categories, [], range)).toEqual(days.map(item => ({ date: item.date, allDay: [], timed: [] })));
+    expect(buildPrintableWeek(days, categories, [], DEFAULT_CALENDAR_PRINT_RANGE)).toEqual(buildPrintableWeek(days, categories, []));
+  });
+
+  it('rejects malformed ranges rather than changing them or silently printing an empty timetable', () => {
+    class RangeInstance { startMinute = 480; endMinute = 1080; }
+    const invalidRanges = [
+      null, [], {}, { startMinute: 0 }, { endMinute: 1440 }, { startMinute: '480', endMinute: 1080 },
+      { startMinute: -1, endMinute: 1080 }, { startMinute: 480, endMinute: 1441 },
+      { startMinute: 480, endMinute: 480 }, { startMinute: 1080, endMinute: 480 },
+      { startMinute: 480.5, endMinute: 1080 }, { startMinute: 480, endMinute: 1080.5 },
+      { startMinute: NaN, endMinute: 1080 }, { startMinute: 480, endMinute: Infinity },
+      { startMinute: 480, endMinute: 1080, unsupported: true },
+      Object.assign(Object.create({ startMinute: 480, endMinute: 1080 }), { first: 1, second: 2 }),
+      Object.assign(Object.create({ startMinute: 480 }), { endMinute: 1080, unsupported: true }),
+      new RangeInstance(),
+    ];
+    for (const invalid of invalidRanges) {
+      expect(isCalendarPrintRange(invalid)).toBe(false);
+      expect(() => buildPrintableWeek([], categories, [], invalid as CalendarPrintRange)).toThrow(RangeError);
+      expect(() => getCalendarPrintTicks(invalid as CalendarPrintRange)).toThrow(RangeError);
+    }
+    expect(isCalendarPrintRange(DEFAULT_CALENDAR_PRINT_RANGE)).toBe(true);
+    expect(isCalendarPrintRange({ startMinute: 1439, endMinute: 1440 })).toBe(true);
+    expect(isCalendarPrintRange(Object.assign(Object.create(null), { startMinute: 480, endMinute: 1080 }))).toBe(true);
+  });
+
+  it('labels both print boundaries and full-hour interior ticks without crowding boundary labels', () => {
+    expect(getCalendarPrintTicks()).toEqual(Array.from({ length: 25 }, (_, hour) => hour * 60));
+    expect(getCalendarPrintTicks({ startMinute: 480, endMinute: 720 })).toEqual([480, 540, 600, 660, 720]);
+    expect(getCalendarPrintTicks({ startMinute: 465, endMinute: 735 })).toEqual([465, 540, 600, 660, 735]);
+    expect(getCalendarPrintTicks({ startMinute: 510, endMinute: 630 })).toEqual([510, 540, 600, 630]);
+    expect(getCalendarPrintTicks({ startMinute: 539, endMinute: 541 })).toEqual([539, 541]);
+    expect(getCalendarPrintTicks({ startMinute: 1439, endMinute: 1440 })).toEqual([1439, 1440]);
   });
 });

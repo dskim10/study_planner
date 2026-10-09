@@ -5,10 +5,19 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
+    function validCalendarPrintRange(range) {
+      return range is map
+        && range.keys().hasAll(['startMinute', 'endMinute'])
+        && range.keys().hasOnly(['startMinute', 'endMinute'])
+        && range.startMinute is int && range.endMinute is int
+        && range.startMinute >= 0 && range.startMinute < 1440
+        && range.endMinute > range.startMinute && range.endMinute <= 1440;
+    }
+
     function validPlanner(data) {
       return data is map
         && data.keys().hasAll(['version', 'categories', 'events', 'goals', 'isDemo'])
-        && data.keys().hasOnly(['version', 'categories', 'events', 'goals', 'isDemo', 'hiddenCategoryIds', 'subjects'])
+        && data.keys().hasOnly(['version', 'categories', 'events', 'goals', 'isDemo', 'hiddenCategoryIds', 'subjects', 'calendarPrintRange'])
         && data.version == 3
         && data.categories is list
         && data.events is list
@@ -17,7 +26,8 @@ service cloud.firestore {
         && (!('subjects' in data) || (data.subjects is list
           && (data.subjects.size() > 0 || data.goals.size() == 0)))
         && data.isDemo is bool
-        && (!('hiddenCategoryIds' in data) || data.hiddenCategoryIds is list);
+        && (!('hiddenCategoryIds' in data) || data.hiddenCategoryIds is list)
+        && (!('calendarPrintRange' in data) || validCalendarPrintRange(data.calendarPrintRange));
     }
 
     function validEnvelope(uid) {
@@ -40,6 +50,8 @@ service cloud.firestore {
         && request.resource.data.ownerId == resource.data.ownerId
         // Older clients omit subjects when saving; never let them erase an upgraded list.
         && (!('subjects' in resource.data.data) || 'subjects' in request.resource.data.data)
+        // Reset print hours explicitly to 0..1440; older clients must not erase this preference.
+        && (!('calendarPrintRange' in resource.data.data) || 'calendarPrintRange' in request.resource.data.data)
         && request.resource.data.revision == resource.data.revision + 1;
       allow list, delete: if false;
     }

@@ -38,10 +38,10 @@ const subjectTime = (page: Page, name: string) => summary(page).locator('dl > di
 const manager = (page: Page) => page.getByRole('dialog', { name: '과목 관리', exact: true });
 const sidebar = (page: Page) => page.getByRole('region', { name: '내 캘린더', exact: true });
 
-async function expectTotals(page: Page, planned: string, available: string) {
+async function expectTotals(page: Page, planned: string, available: string, remaining = available) {
   await expect(page.locator('.planned-stat .stat-value')).toContainText(planned);
   await expect(page.locator('.available-stat .stat-value')).toContainText(available);
-  await expect(page.locator('.remaining-stat .stat-value')).toContainText(available);
+  await expect(page.locator('.remaining-stat .stat-value')).toContainText(remaining);
 }
 
 async function addFromManager(page: Page, name: string) {
@@ -53,41 +53,48 @@ async function addFromManager(page: Page, name: string) {
   await manager(page).getByRole('button', { name: '완료', exact: true }).click();
 }
 
-test('calendar unions same and different subjects and keeps totals through filters, goal changes, months and weeks', async ({ page }) => {
-  await open(page);
-  await expectTotals(page, '5시간', '162시간');
+test('calendar excludes subjects from capacity, unions overlapping ordinary events and preserves totals through filters, goals, months and weeks', async ({ page }) => {
+  await open(page, { ...fixture, events: [...fixture.events, schedule('겹친 이동', 'personal', '13:00', '15:00')] });
+  await expectTotals(page, '5시간', '165시간', '161시간');
   await expect(subjectTime(page, '수학')).toHaveText('4시간');
   await expect(subjectTime(page, '영어')).toHaveText('2시간');
   await expect(subjectTime(page, '국어')).toHaveText('0분');
   await expect(page.locator('.cal-day-header').nth(0).locator('.cal-planned-time')).toHaveText('계획 4시간');
   await expect(page.locator('.cal-day-header').nth(1).locator('.cal-planned-time')).toHaveText('계획 1시간');
+  await expect(page.locator('.cal-day-header').nth(0).locator('.cal-availability')).toHaveText('자습 21시간');
+  await expect(page.locator('.cal-day-header').nth(1).locator('.cal-availability')).toHaveText('자습 24시간');
 
   await page.getByRole('region', { name: '내 캘린더', exact: true }).getByRole('checkbox', { name: '수학', exact: true }).uncheck();
-  await expect(page.locator('.cal-event')).toHaveCount(2);
-  await expectTotals(page, '5시간', '162시간');
+  await expect(page.locator('.cal-event')).toHaveCount(3);
+  await expectTotals(page, '5시간', '165시간', '161시간');
+  await sidebar(page).getByRole('checkbox', { name: '개인 일정', exact: true }).uncheck();
+  await expect(page.locator('.cal-event')).toHaveCount(1);
+  await expectTotals(page, '5시간', '165시간', '161시간');
   await page.getByRole('button', { name: '월간', exact: true }).click();
   const monday = page.locator('.cal-month-cell').filter({ has: page.getByRole('button', { name: '10월 5일 월요일 일정 추가', exact: true }) });
   await expect(monday.locator('.cal-planned-time')).toHaveText('계획 4시간');
+  await expect(monday.locator('.cal-month-available')).toHaveText('자습 21시간');
   await page.reload();
-  await expectTotals(page, '5시간', '162시간');
+  await expectTotals(page, '5시간', '165시간', '161시간');
   await expect(page.getByRole('region', { name: '내 캘린더', exact: true }).getByRole('checkbox', { name: '수학', exact: true })).not.toBeChecked();
 
   await page.getByRole('link', { name: '주간 학습 계획', exact: true }).click();
   await expect(subjectTime(page, '수학')).toHaveText('4시간');
   await expect(page.locator('.goal-day').first().locator('.goal-day-planned')).toContainText('4시간');
+  await expect(page.locator('.goal-day').first().locator('strong')).toHaveText('21시간');
   await page.getByRole('checkbox', { name: /이번 주 교재/ }).check();
-  await expectTotals(page, '5시간', '162시간');
+  await expectTotals(page, '5시간', '165시간', '161시간');
   await page.getByRole('button', { name: '이번 주 교재 삭제', exact: true }).click();
   await page.getByRole('button', { name: '목표 삭제', exact: true }).click();
-  await expectTotals(page, '5시간', '162시간');
+  await expectTotals(page, '5시간', '165시간', '161시간');
   await page.getByRole('button', { name: '다음 주', exact: true }).click();
-  await expectTotals(page, '1시간', '167시간');
+  await expectTotals(page, '1시간', '168시간', '167시간');
   await expect(subjectTime(page, '수학')).toHaveText('1시간');
   await expect(subjectTime(page, '영어')).toHaveText('0분');
   await page.getByRole('link', { name: '캘린더', exact: true }).click();
-  await expectTotals(page, '1시간', '167시간');
+  await expectTotals(page, '1시간', '168시간', '167시간');
   await page.getByRole('button', { name: '이전 주', exact: true }).click();
-  await expectTotals(page, '5시간', '162시간');
+  await expectTotals(page, '5시간', '165시간', '161시간');
 });
 
 test('subject management validates names and updates goals across weeks while preserving calendar events', async ({ page }) => {
@@ -115,7 +122,7 @@ test('subject management validates names and updates goals across weeks while pr
   await goal.getByRole('button', { name: '목표 저장', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: /코딩 프로그래밍 입문/ })).toBeVisible();
   expect((await stored(page)).goals.find(item => item.material === '프로그래밍 입문')).not.toHaveProperty('estimatedMinutes');
-  await expectTotals(page, '5시간', '162시간');
+  await expectTotals(page, '5시간', '166시간', '162시간');
 
   await page.getByRole('button', { name: '과목 관리', exact: true }).click();
   await manager(page).getByRole('button', { name: '수학 과목 수정', exact: true }).click();
@@ -125,7 +132,7 @@ test('subject management validates names and updates goals across weeks while pr
   await manager(page).getByRole('button', { name: '완료', exact: true }).click();
   expect((await stored(page)).goals.filter(item => item.id.endsWith('week')).map(item => item.subject)).toEqual(['미적분', '미적분']);
   await expect(subjectTime(page, '미적분')).toHaveText('4시간');
-  await expectTotals(page, '5시간', '162시간');
+  await expectTotals(page, '5시간', '166시간', '162시간');
   expect((await stored(page)).categories.find(item => item.id === 'math')?.label).toBe('미적분');
   expect((await stored(page)).hiddenCategoryIds).toEqual(['math']);
   expect((await stored(page)).events).toEqual(fixture.events);
@@ -140,6 +147,7 @@ test('subject management validates names and updates goals across weeks while pr
   await deletion.getByRole('combobox', { name: '이동할 과목', exact: true }).selectOption('코딩');
   await deletion.getByRole('button', { name: '과목 삭제', exact: true }).click();
   expect((await stored(page)).goals.map(item => item.subject)).toEqual(['코딩', '코딩', '코딩']);
+  await expectTotals(page, '2시간', '162시간');
   await manager(page).getByRole('button', { name: '코딩 과목 삭제', exact: true }).click();
   deletion = page.getByRole('dialog', { name: '과목 삭제', exact: true });
   await deletion.getByRole('radio', { name: '이 과목의 학습 목표도 함께 삭제', exact: true }).check();
@@ -164,12 +172,13 @@ test('subject management validates names and updates goals across weeks while pr
   await deleteCategory.getByRole('radio', { name: '이 종류의 일정도 함께 삭제', exact: true }).check();
   await deleteCategory.getByRole('button', { name: '종류 삭제', exact: true }).click();
   expect((await stored(page)).events).toEqual(fixture.events.filter(item => item.type !== 'math'));
-  await expectTotals(page, '2시간', '165시간');
+  await expectTotals(page, '2시간', '166시간', '165시간');
 });
 
 test('the last subject can be deleted and restored from a new goal on mobile without restoring defaults', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, { ...fixture, subjects: ['수학'] });
+  await expectTotals(page, '4시간', '165시간', '162시간');
   await page.getByRole('link', { name: '주간 학습 계획', exact: true }).click();
   await page.getByRole('button', { name: '과목 관리', exact: true }).click();
   await manager(page).getByRole('button', { name: '수학 과목 삭제', exact: true }).click();
@@ -193,14 +202,14 @@ test('the last subject can be deleted and restored from a new goal on mobile wit
   await goal.getByLabel('학습자료', { exact: false }).fill('다시 시작하는 교재');
   await goal.getByLabel('학습 범위', { exact: false }).fill('1장');
   await goal.getByRole('button', { name: '목표 저장', exact: true }).click();
-  await expectTotals(page, '4시간', '162시간');
+  await expectTotals(page, '4시간', '165시간', '162시간');
   await page.reload();
   expect((await stored(page)).subjects).toEqual(['수학']);
   await expect(page.getByRole('checkbox', { name: /수학 다시 시작하는 교재/ })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('normalized category names count all-day and midnight events without depending on goal estimates or event titles', async ({ page }) => {
+test('normalized subject all-day and midnight events preserve capacity while ordinary all-day events block the day', async ({ page }) => {
   await open(page, {
     version: 3, isDemo: false, subjects: ['math'], goals: [],
     categories: [{ id: 'math', label: 'Ｍａｔｈ', color: '#6d8ec7' }, { id: 'school', label: '학교', color: '#809387' }],
@@ -209,16 +218,32 @@ test('normalized category names count all-day and midnight events without depend
       schedule('겹친 수학', 'math', '10:00', '11:00'),
       schedule('자정까지 공부', 'math', '23:00', '24:00', { date: '2026-10-06' }),
       schedule('math', 'school', '12:00', '13:00', { date: '2026-10-07' }),
+      schedule('종일 학교', 'school', '09:00', '10:00', { date: '2026-10-08', allDay: true }),
+      schedule('학교와 겹친 종일 수학', 'math', '09:00', '10:00', { date: '2026-10-08', allDay: true }),
     ],
   });
-  await expectTotals(page, '25시간', '142시간');
-  await expect(subjectTime(page, 'math')).toHaveText('25시간');
+  await expectTotals(page, '49시간', '143시간', '118시간');
+  await expect(subjectTime(page, 'math')).toHaveText('49시간');
   await expect(page.locator('.cal-day-header').nth(0).locator('.cal-planned-time')).toHaveText('계획 24시간');
   await expect(page.locator('.cal-day-header').nth(1).locator('.cal-planned-time')).toHaveText('계획 1시간');
   await expect(page.locator('.cal-day-header').nth(2).locator('.cal-planned-time')).toHaveText('계획 0분');
+  await expect(page.locator('.cal-day-header').nth(0).locator('.cal-availability')).toHaveText('자습 24시간');
+  await expect(page.locator('.cal-day-header').nth(1).locator('.cal-availability')).toHaveText('자습 24시간');
+  await expect(page.locator('.cal-day-header').nth(2).locator('.cal-availability')).toHaveText('자습 23시간');
+  await expect(page.locator('.cal-day-header').nth(3).locator('.cal-availability')).toHaveText('자습 0분');
   await page.getByRole('region', { name: '내 캘린더', exact: true }).getByRole('checkbox', { name: 'Ｍａｔｈ', exact: true }).uncheck();
-  await expect(page.locator('.cal-all-day-event')).toHaveCount(0);
-  await expectTotals(page, '25시간', '142시간');
+  await expect(page.locator('.cal-all-day-event')).toHaveCount(1);
+  await expectTotals(page, '49시간', '143시간', '118시간');
+  await page.getByRole('button', { name: '월간', exact: true }).click();
+  const monday = page.locator('.cal-month-cell').filter({ has: page.getByRole('button', { name: '10월 5일 월요일 일정 추가', exact: true }) });
+  const thursday = page.locator('.cal-month-cell').filter({ has: page.getByRole('button', { name: '10월 8일 목요일 일정 추가', exact: true }) });
+  await expect(monday.locator('.cal-month-available')).toHaveText('자습 24시간');
+  await expect(thursday.locator('.cal-month-available')).toHaveText('자습 0분');
+  await page.getByRole('link', { name: '주간 학습 계획', exact: true }).click();
+  await expect(page.locator('.goal-day').nth(0).locator('strong')).toHaveText('24시간');
+  await expect(page.locator('.goal-day').nth(3).locator('strong')).toHaveText('0분');
+  await page.reload();
+  await expectTotals(page, '49시간', '143시간', '118시간');
 });
 
 test('default and custom subjects create protected real categories, reuse existing names and accept forty-character mobile events', async ({ page }) => {
@@ -260,14 +285,14 @@ test('default and custom subjects create protected real categories, reuse existi
   await editor.getByLabel('종료 시간', { exact: true }).fill('19:00');
   await editor.getByRole('button', { name: '일정 추가', exact: true }).click();
   await expect(page.locator('.cal-event')).toHaveCount(1);
-  await expectTotals(page, '1시간', '167시간');
+  await expectTotals(page, '1시간', '168시간', '167시간');
   await page.locator('.cal-event').click();
   await page.getByRole('dialog').getByLabel('일정 이름', { exact: true }).fill('수정한 과목 공부');
   await page.getByRole('dialog').getByRole('button', { name: '변경사항 저장', exact: true }).click();
   await expect(page.locator('.cal-event')).toContainText('수정한 과목 공부');
   await legend.getByRole('checkbox', { name: longName, exact: true }).uncheck();
   await expect(page.locator('.cal-event')).toHaveCount(0);
-  await expectTotals(page, '1시간', '167시간');
+  await expectTotals(page, '1시간', '168시간', '167시간');
   await page.reload();
   expect((await stored(page)).events[0].type).toBe(linked.id);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -277,6 +302,7 @@ test('renaming a subject into an existing category merges all schedules and keep
   const target = { id: 'reading', label: '독서', color: '#123456' };
   const events = [...fixture.events, schedule('독서 모임', target.id, '14:00', '15:00')];
   await open(page, { ...fixture, subjects: ['수학'], categories: [...fixture.categories, target], events, hiddenCategoryIds: ['math'] });
+  await expectTotals(page, '4시간', '164시간', '161시간');
   await page.getByRole('link', { name: '주간 학습 계획', exact: true }).click();
   await page.getByRole('button', { name: '과목 관리', exact: true }).click();
   await manager(page).getByRole('button', { name: '수학 과목 수정', exact: true }).click();
@@ -290,7 +316,7 @@ test('renaming a subject into an existing category merges all schedules and keep
   expect(data.events).toEqual(events.map(item => item.type === 'math' ? { ...item, type: target.id } : item));
   expect(data.goals).toEqual(fixture.goals.map(item => ({ ...item, subject: '독서' })));
   expect(data.hiddenCategoryIds).toEqual([]);
-  await expectTotals(page, '5시간', '161시간');
+  await expectTotals(page, '5시간', '165시간', '161시간');
   await page.getByRole('link', { name: '캘린더', exact: true }).click();
   await expect(sidebar(page).getByRole('checkbox', { name: '독서', exact: true })).toBeChecked();
   await sidebar(page).getByRole('button', { name: '독서 옵션', exact: true }).click();
@@ -299,8 +325,9 @@ test('renaming a subject into an existing category merges all schedules and keep
   await expect(page.locator('.cal-event')).toHaveCount(6);
   await page.reload();
   expect((await stored(page)).events).toEqual(data.events);
+  await expectTotals(page, '5시간', '165시간', '161시간');
   await page.getByRole('button', { name: '다음 주', exact: true }).click();
   await expect(page.locator('.cal-event')).toHaveCount(1);
   await expect(page.locator('.cal-event-kind')).toHaveText('독서');
-  await expectTotals(page, '1시간', '167시간');
+  await expectTotals(page, '1시간', '168시간', '167시간');
 });

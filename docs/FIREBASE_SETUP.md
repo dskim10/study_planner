@@ -126,6 +126,8 @@ Hosting 사이트 `eddie-planner`는 기존 프로젝트 `rocky-study-planner-6c
 
 웹 설정이 들어 있는 `.env.local`을 준비하고 `VITE_FIREBASE_USE_EMULATORS=false`를 확인한 뒤 배포합니다.
 
+인쇄 시간 범위 저장 기능을 처음 배포할 때는 아래 Hosting 명령 **전에** `npx firebase deploy --only firestore:rules --project rocky-study-planner-6c82f1`로 새 규칙을 배포해야 합니다. 새 선택 필드 `calendarPrintRange`를 허용하는 규칙이 없으면 로그인 계정의 인쇄 설정 저장이 거부됩니다.
+
 ```sh
 npx firebase deploy --only hosting:rocky --project rocky-study-planner-6c82f1
 ```
@@ -161,6 +163,8 @@ npm run dev
 
 - 게스트 데이터는 기존 `chagok-planner-v1` localStorage 키에 남습니다. 로그인하거나 로그아웃해도 다른 저장 영역으로 자동 복사하지 않습니다.
 - 계정 데이터는 Firestore의 `users/{uid}/planner/main`에 저장합니다. 문서에는 `ownerId`, `revision`, `data`, `updatedAt`이 있으며 `data`는 일정·목표·종류·표시 설정을 담은 version 3 플래너입니다.
+- 인쇄 시간 범위는 선택적 `calendarPrintRange: { startMinute, endMinute }`로 함께 저장합니다. `0 <= startMinute < endMinute <= 1440`의 정수만 허용하며 기존 데이터에 없으면 하루 전체를 사용합니다. 인쇄 범위는 일정·시간 집계를 바꾸지 않고 계정별로 복원됩니다. 새 플래너·예시를 불러와도 마지막 범위를 유지하고, 인쇄 미리보기의 ‘하루 전체’는 `{ startMinute: 0, endMinute: 1440 }`을 저장합니다. 한 번 저장한 필드를 구버전 클라이언트가 누락해 지우는 업데이트는 규칙에서 거부합니다.
+- 반복 일정에서 특정 날짜만 수정·삭제하면 원본 일정의 선택적 `excludedDates`에 제외 날짜를 저장합니다. 수정한 내용은 별도의 단일 일정으로 함께 저장합니다. 기존 version 3 데이터와 같은 계정 저장 경로·리비전 처리를 사용하며, 이 필드 때문에 Firestore 규칙을 변경할 필요는 없습니다.
 - 계정의 미저장 변경사항과 캐시는 `rocky-planner-account:{uid}`에 분리해 보관합니다. 로그아웃은 서버 데이터를 지우지 않으며, 같은 계정으로 돌아오면 남은 저장을 재시도합니다. 기기에서만 남아 있는 변경사항은 다른 기기에 아직 보이지 않으므로 저장 상태를 확인합니다.
 - 서버 데이터는 로그인, 새로고침, 계정 메뉴의 **지금 동기화**에서 읽습니다. 현재 구현에는 다른 기기의 변경사항을 실시간으로 수신하는 기능이 없습니다.
 - 다른 기기에서 먼저 저장했다면 리비전 충돌로 자동 저장을 멈춥니다. 현재 내용을 JSON으로 백업한 뒤 **서버 데이터 불러오기**를 선택해 최신 내용을 불러옵니다. 변경사항을 자동 병합하지 않습니다.

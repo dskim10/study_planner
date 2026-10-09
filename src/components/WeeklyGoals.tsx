@@ -101,7 +101,7 @@ export default function WeeklyGoals({ weekStart, goals, days, subjects, studyPla
   const reorderHintId = useId();
   const weekGoals = goals.filter(goal => goal.weekStart === weekStart);
   const completedCount = weekGoals.filter(goal => goal.completed).length;
-  const availableMinutes = days.reduce((total, day) => total + day.availableMinutes, 0);
+  const remainingMinutes = days.reduce((total, day) => total + day.freeSlots.reduce((minutes, slot) => minutes + slot.end - slot.start, 0), 0);
   const visibleGoals = weekGoals.filter(goal => filter === 'all' || (filter === 'completed' ? goal.completed : !goal.completed));
   const visibleSubjectNames = new Set(visibleGoals.map(goal => normalizeSubjectName(goal.subject)));
   const visibleSubjects = subjects.filter(subject => visibleSubjectNames.has(normalizeSubjectName(subject)));
@@ -144,7 +144,7 @@ export default function WeeklyGoals({ weekStart, goals, days, subjects, studyPla
         <div className="goal-week-intro">
           <span className="goal-eyebrow"><Sparkles size={14} /> 나에게 맞는 학습 페이스</span>
           <h2>작은 목표를 모아, 알찬 한 주</h2>
-          <p>캘린더에 배정한 공부 시간과 남은 자습 시간을 살펴보세요.</p>
+          <p>자습 가능 시간과 캘린더에 배정한 공부 시간을 살펴보세요.</p>
         </div>
         <div className="goal-days">
           {days.map((day, index) => (
@@ -180,7 +180,7 @@ export default function WeeklyGoals({ weekStart, goals, days, subjects, studyPla
         <div ref={filtersRef} className="goal-filters" aria-label="학습 목표 필터">
           {([{ value: 'all', label: '전체 목표', count: weekGoals.length }, { value: 'pending', label: '진행 중', count: weekGoals.length - completedCount }, { value: 'completed', label: '완료', count: completedCount }] as const).map(item => <button key={item.value} className={filter === item.value ? 'is-active' : ''} aria-pressed={filter === item.value} onClick={() => setFilter(item.value)}>{item.label}<span>{item.count}</span></button>)}
         </div>
-        <span className="goal-budget"><Clock3 size={14} />{formatDuration(availableMinutes)} 더 배정할 수 있어요</span>
+        <span className="goal-budget"><Clock3 size={14} />{formatDuration(remainingMinutes)} 더 배정할 수 있어요</span>
       </div>
 
       {visibleSubjects.length > 0 && <p className="goal-reorder-hint" id={reorderHintId}>과목 옆 손잡이를 끌어 순서를 바꿔요. 모든 주와 프린트에 같은 순서가 적용돼요. 키보드로는 Space로 선택하고 화살표로 이동한 뒤 Enter로 놓을 수 있어요.</p>}
@@ -229,7 +229,7 @@ export default function WeeklyGoals({ weekStart, goals, days, subjects, studyPla
 
       {reorder.drag?.mode === 'pointer' && createPortal(<div className="goal-reorder-ghost" aria-hidden="true" style={{ left: Math.max(8, Math.min(reorder.drag.x + 14, window.innerWidth - 212)), top: Math.max(8, Math.min(reorder.drag.y + 14, window.innerHeight - 80)) }}><GripVertical size={17} /><span>{reorder.drag.source}</span></div>, document.body)}
 
-      <div className="goal-bottom-note"><ListTodo size={15} /><span>학습 목표의 추가·완료는 시간 계산을 바꾸지 않아요. 남은 배정 시간은 하루 24시간에서 캘린더의 모든 일정을 제외한 자습 가능 시간과 같아요.</span></div>
+      <div className="goal-bottom-note"><ListTodo size={15} /><span>학습 목표의 추가·완료는 시간 계산을 바꾸지 않아요. 과목 일정은 자습 가능 시간에서 차감하지 않으며, 더 배정할 수 있는 시간은 모든 일정을 제외한 빈 시간이에요.</span></div>
 
       {printOpen && <GoalPrintPreview key={weekStart} weekStart={weekStart} goals={goals} subjects={subjects} onClose={() => setPrintOpen(false)} />}
       {editingGoal && <Modal title={isNewGoal ? '새 학습 목표' : '학습 목표 수정'} description="무엇을, 어디까지 공부할지 구체적으로 적어 보세요." onClose={() => setEditingGoal(null)}><GoalEditor goal={editingGoal} subjects={subjects} onSave={saveGoal} onClose={() => setEditingGoal(null)} /></Modal>}

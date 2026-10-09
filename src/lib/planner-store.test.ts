@@ -6,6 +6,8 @@ import { createDemoState, createEmptyState } from './planner';
 import { ACCOUNT_STORAGE_PREFIX, PlannerStore } from './planner-store';
 import { readPlannerState, STORAGE_KEY } from './storage';
 import { moveSubject } from './subjects';
+import { deleteEvent, saveEvent } from './event-occurrences';
+import { occursOn } from './recurrence';
 import { DEFAULT_EVENT_CATEGORIES } from '../types';
 
 class MemoryStorage implements Storage {
@@ -21,6 +23,11 @@ class MemoryStorage implements Storage {
 const account = (uid: string): PlannerAccount => ({ uid, displayName: uid, email: `${uid}@example.test`, photoURL: null });
 function plan(title: string): PlannerState {
   return { ...createEmptyState(), events: [{ id: 'event', title, type: 'school', date: '2026-10-05', startTime: '09:00', endTime: '10:00', allDay: false, recurrence: 'none', weekdays: [] }] };
+}
+function recurringPlan(title: string): PlannerState {
+  const data = plan(title);
+  data.events[0] = { ...data.events[0], recurrence: 'weekly', weekdays: [1, 3] };
+  return data;
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -87,6 +94,133 @@ describe('planner account persistence', () => {
     expect(store.setData(plan('guest edit'))).toBe(true);
     expect(JSON.parse(storage.getItem(STORAGE_KEY)!).events[0].title).toBe('guest edit');
     expect(store.getSnapshot()).toMatchObject({ status: 'local', dirty: false, readOnly: false });
+  });
+
+  it('restores guest print preferences after reload and preserves corrupt preferences for recovery', () => {
+    const { store, storage } = setup(new MemoryStorage(), null);
+    const data = { ...plan('Guest schedule'), calendarPrintRange: { startMinute: 485, endMinute: 1380 } };
+    expect(store.setData(data)).toBe(true);
+    expect(JSON.parse(storage.getItem(STORAGE_KEY)!)).toEqual(data);
+    expect(setup(storage, null).store.getSnapshot().data).toEqual(data);
+
+    const corrupt = JSON.stringify({ ...data, calendarPrintRange: { startMinute: 1380, endMinute: 485 } });
+    const brokenStorage = new MemoryStorage();
+    brokenStorage.setItem(STORAGE_KEY, corrupt);
+    const blocked = setup(brokenStorage, null).store;
+    expect(blocked.getSnapshot()).toMatchObject({ storageBlocked: true, readOnly: true });
+    expect(blocked.setData(data)).toBe(false);
+    expect(brokenStorage.getItem(STORAGE_KEY)).toBe(corrupt);
+  });
+
+  it('recovers unsaved account print preferences across logout and new devices without leaking them', async () => {
+    const storage = new MemoryStorage();
+    const guest = { ...plan('Guest schedule'), calendarPrintRange: { startMinute: 480, endMinute: 1260 } };
+    const original = { ...recurringPlan('Account A schedule'), calendarPrintRange: { startMinute: 540, endMinute: 1320 } };
+    const other = { ...plan('Account B schedule'), calendarPrintRange: { startMinute: 600, endMinute: 1200 } };
+    storage.setItem(STORAGE_KEY, JSON.stringify(guest));
+    const { store, backend } = setup(storage);
+    backend.documents.set('a', { data: original, revision: 3 });
+    backend.documents.set('b', { data: other, revision: 7 });
+    backend.emit('a'); await settle();
+    const expected = { ...original, calendarPrintRange: { startMinute: 420, endMinute: 1440 } };
+    expect(store.setData(data => ({ ...data, calendarPrintRange: expected.calendarPrintRange }))).toBe(true);
+    backend.save.mockRejectedValueOnce(new CloudError('unavailable', 'Offline'));
+    await store.logout();
+    expect(JSON.parse(storage.getItem(ACCOUNT_STORAGE_PREFIX + 'a')!)).toEqual({ data: expected, revision: 3, dirty: true });
+    expect(backend.documents.get('a')).toEqual({ data: original, revision: 3 });
+    expect(store.getSnapshot().data).toEqual(guest);
+    backend.emit('b'); await settle();
+    expect(store.getSnapshot().data).toEqual(other);
+    backend.emit('a'); await settle();
+    expect(store.getSnapshot()).toMatchObject({ data: expected, dirty: true });
+    await store.retry();
+    expect(backend.documents.get('a')).toEqual({ data: expected, revision: 4 });
+    expect(JSON.parse(storage.getItem(ACCOUNT_STORAGE_PREFIX + 'a')!)).toEqual({ data: expected, revision: 4, dirty: false });
+    expect(backend.documents.get('b')).toEqual({ data: other, revision: 7 });
+    expect(JSON.parse(storage.getItem(STORAGE_KEY)!)).toEqual(guest);
+
+    const newBackend = new FakeBackend();
+    newBackend.documents = backend.documents;
+    const newDevice = setup(new MemoryStorage(), newBackend);
+    newBackend.emit('a'); await settle();
+    expect(newDevice.store.getSnapshot().data).toEqual(expected);
+    expect(newDevice.storage.getItem(STORAGE_KEY)).toBeNull();
+    expect(newBackend.save).not.toHaveBeenCalled();
+  });
+
+  it('imports settings-only guest data explicitly and preserves an account with its own print preference', async () => {
+    const storage = new MemoryStorage();
+    const guest = { ...createEmptyState(), calendarPrintRange: { startMinute: 480, endMinute: 1320 } };
+    const existing = { ...createEmptyState(), calendarPrintRange: { startMinute: 600, endMinute: 1440 } };
+    storage.setItem(STORAGE_KEY, JSON.stringify(guest));
+    const { store, backend } = setup(storage);
+    backend.documents.set('existing', { data: existing, revision: 2 });
+    backend.emit('new'); await settle();
+    expect(store.getSnapshot().canImportGuest).toBe(true);
+    expect(backend.save).not.toHaveBeenCalled();
+    await store.importGuest();
+    expect(backend.documents.get('new')).toEqual({ data: guest, revision: 1 });
+    backend.emit('existing'); await settle();
+    expect(store.getSnapshot().canImportGuest).toBe(false);
+    await store.importGuest();
+    expect(store.getSnapshot().data).toEqual(existing);
+    expect(backend.documents.get('existing')).toEqual({ data: existing, revision: 2 });
+    expect(JSON.parse(storage.getItem(STORAGE_KEY)!)).toEqual(guest);
+    expect(backend.save).toHaveBeenCalledOnce();
+  });
+
+  it.each(['guest', 'account'])('keeps the %s print preference when clearing schedules or loading examples', async (mode) => {
+    const storage = new MemoryStorage();
+    const original = { ...plan('Schedule to clear'), calendarPrintRange: { startMinute: 480, endMinute: 1380 } };
+    if (mode === 'guest') storage.setItem(STORAGE_KEY, JSON.stringify(original));
+    const { store, backend } = setup(storage, mode === 'account' ? new FakeBackend() : null);
+    if (mode === 'account') {
+      backend.documents.set('a', { data: original, revision: 1 });
+      backend.emit('a'); await settle();
+    }
+    let revision = 1;
+    for (const replacement of [createEmptyState(), createDemoState('2026-10-05')]) {
+      const expected = { ...replacement, calendarPrintRange: original.calendarPrintRange };
+      expect(store.resetData(replacement)).toBe(true);
+      expect(store.getSnapshot().data).toEqual(expected);
+      expect(replacement).not.toHaveProperty('calendarPrintRange');
+      if (mode === 'account') {
+        await store.retry();
+        expect(backend.documents.get('a')).toEqual({ data: expected, revision: ++revision });
+      } else {
+        expect(JSON.parse(storage.getItem(STORAGE_KEY)!)).toEqual(expected);
+      }
+    }
+    const wholeDay = { startMinute: 0, endMinute: 1440 };
+    expect(store.setData(data => ({ ...data, calendarPrintRange: wholeDay }))).toBe(true);
+    expect(store.resetData(createEmptyState())).toBe(true);
+    expect(store.getSnapshot().data).toEqual({ ...createEmptyState(), calendarPrintRange: wholeDay });
+    if (mode === 'account') {
+      await store.retry();
+      expect(backend.documents.get('a')).toEqual({ data: store.getSnapshot().data, revision: ++revision });
+      expect(storage.getItem(STORAGE_KEY)).toBeNull();
+    } else {
+      expect(JSON.parse(storage.getItem(STORAGE_KEY)!)).toEqual(store.getSnapshot().data);
+    }
+  });
+
+  it('restores one-occurrence edits and deletions from the guest key after a reload', () => {
+    const { store, storage } = setup(new MemoryStorage(), null);
+    const original = recurringPlan('Guest series');
+    const edited = saveEvent(original.events, { ...original.events[0], title: 'Moved occurrence', date: '2026-10-13' }, { eventId: 'event', date: '2026-10-12' });
+    const expected = { ...original, events: deleteEvent(edited, 'event', '2026-10-14') };
+    expect(store.setData(expected)).toBe(true);
+    expect(JSON.parse(storage.getItem(STORAGE_KEY)!)).toEqual(expected);
+
+    const restored = setup(storage, null).store.getSnapshot().data;
+    expect(restored).toEqual(expected);
+    expect(restored.events[0].excludedDates).toEqual(['2026-10-12', '2026-10-14']);
+    expect(occursOn(restored.events[0], '2026-10-12')).toBe(false);
+    expect(occursOn(restored.events[0], '2026-10-14')).toBe(false);
+    expect(occursOn(restored.events[0], '2026-10-19')).toBe(true);
+    expect(restored.events[1]).toMatchObject({ title: 'Moved occurrence', date: '2026-10-13', recurrence: 'none' });
+    expect(occursOn(restored.events[1], '2026-10-13')).toBe(true);
+    expect([...storage.values.keys()]).toEqual([STORAGE_KEY]);
   });
 
   it('protects corrupt guest data until an explicit reset', () => {
@@ -162,6 +296,41 @@ describe('planner account persistence', () => {
     expect(backend.documents.get('a')?.data.events[0].title).toBe('account edit');
     backend.emit('a'); await settle();
     expect(store.getSnapshot().data.events[0].title).toBe('account edit');
+  });
+
+  it('preserves occurrence exceptions across account saves and fresh clients without changing guest or another account', async () => {
+    const storage = new MemoryStorage();
+    const guest = recurringPlan('Guest series');
+    const original = recurringPlan('Account A series');
+    const other = recurringPlan('Account B series');
+    storage.setItem(STORAGE_KEY, JSON.stringify(guest));
+    const { store, backend } = setup(storage);
+    backend.documents.set('a', { data: original, revision: 3 });
+    backend.documents.set('b', { data: other, revision: 7 });
+    backend.emit('a'); await settle();
+    const edited = saveEvent(original.events, { ...original.events[0], date: '2026-10-13', startTime: '15:00', endTime: '16:30' }, { eventId: 'event', date: '2026-10-12' });
+    const expected = { ...original, events: deleteEvent(edited, 'event', '2026-10-14') };
+    expect(store.setData(expected)).toBe(true);
+    expect(JSON.parse(storage.getItem(ACCOUNT_STORAGE_PREFIX + 'a')!)).toEqual({ data: expected, revision: 3, dirty: true });
+    await store.logout();
+    expect(backend.documents.get('a')).toEqual({ data: expected, revision: 4 });
+    expect(store.getSnapshot().data).toEqual(guest);
+    backend.emit('b'); await settle();
+    expect(store.getSnapshot().data).toEqual(other);
+    backend.emit('a'); await settle();
+    expect(store.getSnapshot()).toMatchObject({ data: expected, status: 'ready', dirty: false });
+    expect(JSON.parse(storage.getItem(STORAGE_KEY)!)).toEqual(guest);
+    expect(backend.documents.get('b')).toEqual({ data: other, revision: 7 });
+
+    const newBackend = new FakeBackend();
+    newBackend.documents = backend.documents;
+    const newDevice = setup(new MemoryStorage(), newBackend);
+    newBackend.emit('a'); await settle();
+    expect(newDevice.store.getSnapshot().data).toEqual(expected);
+    expect(JSON.parse(newDevice.storage.getItem(ACCOUNT_STORAGE_PREFIX + 'a')!)).toEqual({ data: expected, revision: 4, dirty: false });
+    expect(newDevice.storage.getItem(STORAGE_KEY)).toBeNull();
+    expect(backend.save).toHaveBeenCalledOnce();
+    expect(newBackend.save).not.toHaveBeenCalled();
   });
 
   it('flushes subject order on logout and restores it without changing guest or another account data', async () => {

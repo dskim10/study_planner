@@ -29,6 +29,7 @@ for (const [mode, label, hours, occurrences] of [['daily', '매일', 161, 7], ['
     await page.reload();
     await page.locator('.cal-event').first().click();
     dialog = page.getByRole('dialog', { name: '일정 수정', exact: true });
+    await dialog.getByRole('radio', { name: '전체 반복 일정', exact: true }).check();
     await expect(dialog.getByLabel('반복', { exact: true })).toHaveValue(mode);
     await dialog.getByLabel('반복 종료일', { exact: true }).fill('2026-10-07');
     await dialog.getByRole('button', { name: '변경사항 저장' }).click();
@@ -141,6 +142,7 @@ test('custom month patterns and yearly units save and reopen without loss', asyn
   await page.getByRole('button', { name: '월간', exact: true }).click();
   await expect(page.getByRole('button', { name: /10월 26일.*마지막 월요일 계획.*일정 수정/ })).toBeVisible();
   await page.getByRole('button', { name: /10월 26일.*마지막 월요일 계획.*일정 수정/ }).click();
+  await page.getByRole('dialog', { name: '일정 수정', exact: true }).getByRole('radio', { name: '전체 반복 일정', exact: true }).check();
   await page.getByRole('button', { name: '맞춤 설정 수정', exact: true }).click();
   custom = page.getByRole('dialog', { name: '반복 설정', exact: true });
   await expect(custom.getByLabel('월 반복 방식', { exact: true })).toHaveValue('lastWeekday');
@@ -150,6 +152,7 @@ test('custom month patterns and yearly units save and reopen without loss', asyn
   await page.getByRole('button', { name: '변경사항 저장' }).click();
   await page.reload();
   await page.locator('.cal-event').first().click();
+  await page.getByRole('dialog', { name: '일정 수정', exact: true }).getByRole('radio', { name: '전체 반복 일정', exact: true }).check();
   await page.getByRole('button', { name: '맞춤 설정 수정', exact: true }).click();
   await expect(custom.getByLabel('반복 단위', { exact: true })).toHaveValue('year');
   await expect(custom.getByLabel('반복 간격', { exact: true })).toHaveValue('2');

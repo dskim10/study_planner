@@ -29,7 +29,7 @@ async function open(page: Page) {
 }
 
 async function expectBudget(page: Page) {
-  await expect(page.locator('.available-stat .stat-value')).toContainText('138시간');
+  await expect(page.locator('.available-stat .stat-value')).toContainText('139시간');
   await expect(page.locator('.remaining-stat .stat-value')).toContainText('138시간');
   await expect(page.locator('.planned-stat .stat-value')).toContainText('2시간');
 }

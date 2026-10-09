@@ -5,6 +5,7 @@ import { DEFAULT_EVENT_CATEGORIES, DEFAULT_SUBJECTS } from '../types';
 import { createCustomRecurrence } from './recurrence';
 import { removeCategory } from './categories';
 import { isSubjectCategory, syncSubjectCategories } from './subjects';
+import { deleteEvent, saveEvent } from './event-occurrences';
 
 const sample = () => {
   const state = createDemoState('2026-10-05');
@@ -15,6 +16,75 @@ const sample = () => {
 };
 
 describe('stored planner data validation', () => {
+  it('round-trips optional print ranges without changing schedules or study-time totals', () => {
+    const state = sample();
+    for (const calendarPrintRange of [{ startMinute: 0, endMinute: 1440 }, { startMinute: 485, endMinute: 1330 }, { startMinute: 1439, endMinute: 1440 }]) {
+      const saved = { ...state, calendarPrintRange };
+      const restored = readPlannerState(JSON.parse(JSON.stringify(saved)));
+      expect(restored).toEqual(saved);
+      expect(getWeekSummary('2026-10-05', restored!.events)).toEqual(getWeekSummary('2026-10-05', state.events));
+    }
+    expect(readPlannerState(state)).toEqual(state);
+    expect(readPlannerState(state)).not.toHaveProperty('calendarPrintRange');
+  });
+
+  it('rejects malformed print preferences instead of silently dropping saved settings', () => {
+    const state = sample();
+    for (const calendarPrintRange of [
+      null, [], '08:00-22:00', {}, { startMinute: 0 }, { endMinute: 1440 },
+      { startMinute: '0', endMinute: 1440 }, { startMinute: 0, endMinute: '1440' },
+      { startMinute: -1, endMinute: 1440 }, { startMinute: 0, endMinute: 1441 },
+      { startMinute: 1440, endMinute: 1440 }, { startMinute: 600, endMinute: 600 },
+      { startMinute: 600, endMinute: 599 }, { startMinute: 0.5, endMinute: 1440 },
+      { startMinute: 0, endMinute: 1439.5 }, { startMinute: NaN, endMinute: Infinity },
+      { startMinute: 0, endMinute: 1440, extra: true },
+    ]) {
+      const invalid = { ...state, calendarPrintRange };
+      const snapshot = structuredClone(invalid);
+      expect(isPlannerState(invalid)).toBe(false);
+      expect(readPlannerState(invalid)).toBeNull();
+      expect(invalid).toEqual(snapshot);
+    }
+  });
+
+  it('does not derive print preferences from removed legacy activity hours', () => {
+    const state = sample();
+    for (const version of [1, 2]) {
+      const legacy = { ...state, version, activityHours: { startMinute: 480, endMinute: 1320 }, calendarPrintRange: { startMinute: 540, endMinute: 1260 } };
+      const restored = readPlannerState(legacy);
+      expect(restored).toEqual(state);
+      expect(restored).not.toHaveProperty('activityHours');
+      expect(restored).not.toHaveProperty('calendarPrintRange');
+    }
+  });
+
+  it('round-trips recurrence exclusions and detached edits through version 3 storage', () => {
+    const state = sample();
+    const original = state.events[0];
+    state.events = deleteEvent(state.events, original.id, '2026-10-05');
+    state.events = saveEvent(state.events, { ...original, date: '2026-10-08', title: '개별 변경' },
+      { eventId: original.id, date: '2026-10-07' });
+    const restored = readPlannerState(JSON.parse(JSON.stringify(state)));
+    expect(restored).toEqual(state);
+    expect(restored?.events[0].excludedDates).toEqual(['2026-10-05', '2026-10-07']);
+    expect(getWeekSummary('2026-10-05', restored!.events)).toEqual(getWeekSummary('2026-10-05', state.events));
+  });
+
+  it('rejects malformed, duplicate, impossible or pre-anchor exclusions without silently repairing them', () => {
+    const state = sample();
+    for (const excludedDates of [null, {}, '2026-10-05', [null], [1], [''], ['2026-02-30'], ['2027-02-29'], ['2027-2-28'], ['2026-10-04'], ['2026-10-05', '2026-10-05']]) {
+      const invalid = { ...state, events: [{ ...state.events[0], excludedDates }] };
+      const snapshot = structuredClone(invalid);
+      expect(isPlannerState(invalid)).toBe(false);
+      expect(readPlannerState(invalid)).toBeNull();
+      expect(invalid).toEqual(snapshot);
+    }
+    for (const excludedDates of [[], ['2026-10-05']]) {
+      expect(isPlannerState({ ...state, events: [{ ...state.events[0], recurrence: 'none', excludedDates }] })).toBe(false);
+      expect(isPlannerState({ ...state, events: [{ ...state.events[0], excludedDates }] })).toBe(true);
+    }
+  });
+
   it('accepts a JSON round trip of both the fictional example and empty state', () => {
     for (const state of [sample(), createDemoState('2026-10-05'), createEmptyState()]) {
       const restored: unknown = JSON.parse(JSON.stringify(state));

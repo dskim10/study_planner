@@ -1,4 +1,5 @@
-import type { DaySummary, EventCategory, ScheduleEvent } from '../types';
+import type { CalendarPrintRange, DaySummary, EventCategory, ScheduleEvent } from '../types';
+import { DEFAULT_CALENDAR_PRINT_RANGE, isCalendarPrintRange } from './calendar-print-range';
 import { timeToMinutes } from './planner';
 
 export interface PrintCalendarEvent {
@@ -23,7 +24,6 @@ export interface PrintDay {
   timed: PrintTimedEvent[];
 }
 
-const DAY_MINUTES = 1440;
 const MIN_VISUAL_MINUTES = 30;
 
 function positionGroup(group: PrintTimedEvent[]): void {
@@ -38,11 +38,13 @@ function positionGroup(group: PrintTimedEvent[]): void {
 
 /**
  * Use the supplied expanded day occurrences without changing schedules or totals.
- * Collision columns use printable intervals, including 30-minute minimum blocks.
- * A short event near midnight moves its block upward; its actual times stay intact.
+ * Collision columns use clipped printable intervals with up to 30-minute minimum blocks.
+ * A short event near the range end moves upward; its actual times stay intact.
  * Unknown categories retain their schedules with a defensive label/color fallback.
  */
-export function buildPrintableWeek(days: DaySummary[], categories: EventCategory[], hiddenIds: string[]): PrintDay[] {
+export function buildPrintableWeek(days: DaySummary[], categories: EventCategory[], hiddenIds: string[], range: CalendarPrintRange = DEFAULT_CALENDAR_PRINT_RANGE): PrintDay[] {
+  if (!isCalendarPrintRange(range)) throw new RangeError('인쇄 종료 시간은 시작 시간보다 늦은 24:00 이내의 시간이어야 해요.');
+  const minimumHeight = Math.min(MIN_VISUAL_MINUTES, range.endMinute - range.startMinute);
   const categoriesById = new Map(categories.map(category => [category.id, category]));
   const hidden = new Set(hiddenIds);
   return days.map(day => {
@@ -58,8 +60,11 @@ export function buildPrintableWeek(days: DaySummary[], categories: EventCategory
       const startMinute = timeToMinutes(event.startTime);
       const endMinute = timeToMinutes(event.endTime);
       if (endMinute <= startMinute) throw new RangeError('인쇄할 일정의 종료 시간은 시작 시간보다 늦어야 해요.');
-      const heightMinutes = Math.max(MIN_VISUAL_MINUTES, endMinute - startMinute);
-      const topMinute = Math.min(startMinute, DAY_MINUTES - heightMinutes);
+      if (endMinute <= range.startMinute || startMinute >= range.endMinute) continue;
+      const clippedStart = Math.max(startMinute, range.startMinute);
+      const clippedEnd = Math.min(endMinute, range.endMinute);
+      const heightMinutes = Math.max(minimumHeight, clippedEnd - clippedStart);
+      const topMinute = Math.min(clippedStart, range.endMinute - heightMinutes);
       timed.push({ event, category, startMinute, endMinute, topMinute, heightMinutes, column: 0, columnCount: 1 });
     }
     timed.sort((a, b) => a.topMinute - b.topMinute || a.startMinute - b.startMinute || b.endMinute - a.endMinute || (a.event.id < b.event.id ? -1 : a.event.id > b.event.id ? 1 : 0));

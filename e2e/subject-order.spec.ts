@@ -55,7 +55,7 @@ async function expectOrderOnly(page: Page, order: string[], original = fixture) 
   const data = await stored(page);
   expect({ ...data, subjects: original.subjects }).toEqual(original);
   await expect(page.locator('.planned-stat .stat-value')).toContainText('3시간');
-  await expect(page.locator('.available-stat .stat-value')).toContainText('165시간');
+  await expect(page.locator('.available-stat .stat-value')).toContainText('168시간');
   await expect(page.locator('.remaining-stat .stat-value')).toContainText('165시간');
 }
 

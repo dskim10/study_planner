@@ -2,6 +2,7 @@ import type { EventCategory, PlannerState, ScheduleEvent, StudyGoal } from '../t
 import { DEFAULT_EVENT_CATEGORIES } from '../types';
 import { getCategoryError } from './categories';
 import { validateCustomRecurrence } from './recurrence';
+import { isCalendarPrintRange } from './calendar-print-range';
 import { getSubjectError, normalizeSubjectName, syncSubjectCategories } from './subjects';
 
 // Keep the legacy key across app renames and schema migrations to preserve existing plans.
@@ -22,6 +23,10 @@ function validEvent(value: unknown, categoryIds: Set<string>): value is Schedule
   if (value.recurrence === 'weekly' && value.weekdays.length === 0) return false;
   if (value.repeatUntil !== undefined && (!date(value.repeatUntil) || value.repeatUntil < value.date)) return false;
   if ((value.recurrence === 'custom' || value.customRecurrence !== undefined) && validateCustomRecurrence(value.customRecurrence, value.date)) return false;
+  const startDate = value.date;
+  if (value.excludedDates !== undefined && (value.recurrence === 'none' || !Array.isArray(value.excludedDates)
+    || !value.excludedDates.every((excluded) => date(excluded) && excluded >= startDate)
+    || new Set(value.excludedDates).size !== value.excludedDates.length)) return false;
   return true;
 }
 function validGoal(value: unknown): value is StudyGoal {
@@ -30,6 +35,7 @@ function validGoal(value: unknown): value is StudyGoal {
 }
 export function isPlannerState(value: unknown): value is PlannerState {
   if (!object(value) || value.version !== 3 || typeof value.isDemo !== 'boolean') return false;
+  if (value.calendarPrintRange !== undefined && !isCalendarPrintRange(value.calendarPrintRange)) return false;
   if (!Array.isArray(value.categories)) return false;
   const categories: EventCategory[] = [];
   for (const category of value.categories) {
@@ -63,6 +69,7 @@ export function readPlannerState(value: unknown): PlannerState | null {
   const state = {
     version: 3, categories, events: value.events, goals: value.goals, isDemo: value.isDemo,
     ...(value.version === 3 && value.hiddenCategoryIds !== undefined ? { hiddenCategoryIds: value.hiddenCategoryIds } : {}),
+    ...(value.version === 3 && value.calendarPrintRange !== undefined ? { calendarPrintRange: value.calendarPrintRange } : {}),
     ...(value.subjects !== undefined ? { subjects: value.subjects } : {}),
   };
   return isPlannerState(state) ? syncSubjectCategories(state) : null;

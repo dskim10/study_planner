@@ -65,7 +65,7 @@ test('click snaps to a quarter hour and dragging previews and saves the selected
   await editor(page).getByRole('button', { name: '일정 추가', exact: true }).click();
   await expect(page.getByRole('button', { name: /드래그로 정한 공부, 09:15부터 11:45까지/ })).toBeVisible();
   await expect(page.locator('.planned-stat .stat-value')).toContainText('2시간 30분');
-  await expect(page.locator('.available-stat .stat-value')).toContainText('165시간 30분');
+  await expect(page.locator('.available-stat .stat-value')).toContainText('168시간');
   await page.reload();
   expect((await stored(page)).events).toEqual([expect.objectContaining({ date: monday, startTime: '09:15', endTime: '11:45', title: '드래그로 정한 공부' })]);
   await expect(page.getByRole('button', { name: /드래그로 정한 공부, 09:15부터 11:45까지/ })).toBeVisible();

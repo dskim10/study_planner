@@ -33,6 +33,8 @@ export interface ScheduleEvent {
   weekdays: number[];
   repeatUntil?: string;
   customRecurrence?: CustomRecurrence;
+  /** Original occurrence dates omitted from a recurring series. */
+  excludedDates?: string[];
 }
 
 export interface StudyGoal {
@@ -46,11 +48,18 @@ export interface StudyGoal {
   completed: boolean;
 }
 
+export interface CalendarPrintRange {
+  startMinute: number;
+  endMinute: number;
+}
+
 export interface PlannerState {
   version: 3;
   categories: EventCategory[];
   hiddenCategoryIds?: string[];
   subjects?: string[];
+  /** Optional print preference; it never changes the calendar or study-time totals. */
+  calendarPrintRange?: CalendarPrintRange;
   events: ScheduleEvent[];
   goals: StudyGoal[];
   isDemo: boolean;
@@ -58,9 +67,13 @@ export interface PlannerState {
 
 export interface DaySummary {
   date: string;
+  /** Daily capacity after non-subject schedules only, including planned study time. */
   availableMinutes: number;
+  /** Union of non-subject schedule intervals. */
   busyMinutes: number;
+  /** All occurrences, including subject schedules, regardless of display filters. */
   events: ScheduleEvent[];
+  /** Actual unscheduled intervals after every event, including subject schedules. */
   freeSlots: { start: number; end: number }[];
 }
 

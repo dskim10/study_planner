@@ -37,7 +37,7 @@ function failureStatus(error: unknown): PlannerStatus {
 function isEmpty(data: PlannerState): boolean {
   const empty = createEmptyState();
   const current = readPlannerState(data);
-  return current !== null && !current.isDemo && !current.events.length && !current.goals.length && !(current.hiddenCategoryIds?.length) && JSON.stringify(current.categories) === JSON.stringify(empty.categories) && JSON.stringify(current.subjects) === JSON.stringify(empty.subjects);
+  return current !== null && !current.isDemo && !current.events.length && !current.goals.length && !current.calendarPrintRange && !(current.hiddenCategoryIds?.length) && JSON.stringify(current.categories) === JSON.stringify(empty.categories) && JSON.stringify(current.subjects) === JSON.stringify(empty.subjects);
 }
 function checkedRemote(remote: RemotePlanner | null): RemotePlanner | null {
   if (remote === null) return null;
@@ -239,8 +239,10 @@ export class PlannerStore {
     if (!readPlannerState(data)) return false;
     if (this.snapshot.account && (!this.serverLoaded || this.snapshot.status === 'conflict' || this.snapshot.authBusy)) return false;
     if (this.snapshot.status === 'auth-loading' || this.snapshot.status === 'loading') return false;
+    // Clearing schedules or loading examples keeps the last explicit print preference.
+    const calendarPrintRange = data.calendarPrintRange ?? this.snapshot.data.calendarPrintRange;
     this.update({ storageBlocked: false, readOnly: false });
-    return this.setData(data);
+    return this.setData(calendarPrintRange ? { ...data, calendarPrintRange } : data);
   };
 
   private scheduleSave(): void {
