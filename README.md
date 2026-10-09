@@ -1,12 +1,12 @@
-# Eddie — 스터디 플래너
+# Torch — 스터디 플래너
 
 중고등학생과 수험생이 학교·학원 일정 사이의 자습 가능 시간을 확인하고, 실천 가능한 주간 학습 목표를 세우는 한국어 웹 앱입니다. React, TypeScript, Vite로 만들었으며, 게스트의 브라우저 저장과 Firebase Google 로그인·계정별 저장을 지원합니다.
 
-**배포된 앱:** [Eddie 열기](https://eddie-planner.web.app) · [보조 주소](https://eddie-planner.firebaseapp.com) · Firebase Hosting
+**배포된 앱:** [Torch 열기](https://torch-planner.web.app) · [보조 주소](https://torch-planner.firebaseapp.com) · Firebase Hosting
 
 2026-10-06 기준 [Firebase 프로젝트](https://console.firebase.google.com/project/rocky-study-planner-6c82f1/overview)에 연결했습니다. Google 로그인 공급자와 승인 도메인을 설정했고, 서울 리전의 Firestore와 소유자 전용 보안 규칙을 배포했습니다. 이 작업 폴더의 `.env.local`에는 연결 설정이 들어 있습니다. 새로 복제한 작업 폴더에서는 Git에 포함되지 않는 환경 파일을 [Firebase 연결 안내](docs/FIREBASE_SETUP.md)에 따라 준비해야 합니다. 설정이 없어도 게스트 기능은 사용할 수 있습니다.
 
-실제 Google 로그인 화면이 열리는 것을 확인했습니다. 사용자의 실제 Google 계정으로 로그인 완료 후 저장·로그아웃·복원하는 최종 확인은 남아 있으며, 해당 동작은 로컬 Firebase 에뮬레이터로 검증했습니다.
+2026-10-09 앱 이름을 Torch로 바꾸고 횃불 아이콘과 함께 새 주소에 배포했습니다. PC·모바일 화면과 두 Torch 주소의 Google 로그인 화면 연결을 확인했습니다. 사용자의 실제 Google 계정으로 로그인 완료 후 저장·로그아웃·복원하는 최종 확인은 남아 있으며, 해당 동작은 로컬 Firebase 에뮬레이터로 검증했습니다.
 
 ## 실행
 
@@ -39,9 +39,9 @@ Firebase Hosting에 다시 배포하려면 실제 Firebase 설정이 있는 `.en
 npx firebase deploy --only hosting:rocky --project rocky-study-planner-6c82f1
 ```
 
-배포 대상 `rocky`는 같은 Firebase 프로젝트의 Hosting 사이트 `eddie-planner`에 연결됩니다. 앱 표시 이름은 Eddie이며, 기존 데이터와의 호환성을 위해 프로젝트 ID, 인증용 `authDomain`, 브라우저 저장 키, `.env.local`과 Firestore 저장소는 그대로 사용합니다.
+배포 대상 `rocky`는 같은 Firebase 프로젝트의 Hosting 사이트 `torch-planner`에 연결됩니다. 앱 표시 이름은 Torch이며 횃불 아이콘을 사용합니다. 기존 데이터와의 호환성을 위해 프로젝트 ID, 인증용 `authDomain`, 브라우저 저장 키, `.env.local`과 Firestore 저장소는 그대로 사용합니다.
 
-기존 [my-rocky 주소](https://my-rocky.web.app)와 [그 보조 주소](https://my-rocky.firebaseapp.com), [프로젝트 기본 주소](https://rocky-study-planner-6c82f1.web.app)와 [그 보조 주소](https://rocky-study-planner-6c82f1.firebaseapp.com)는 게스트 자료에 접근할 수 있도록 기존 배포를 유지하며 새 주소로 자동 이동시키지 않습니다. 서로 다른 호스트의 `localStorage` 데이터는 자동으로 옮겨지지 않습니다. 게스트 자료를 옮기려면 기존 주소에서 Google 로그인 후, 계정 플래너가 비어 있을 때 **브라우저 데이터 가져오기**를 실행하고 서버 저장 완료를 확인하세요. 새 주소에서 같은 Google 계정으로 로그인하면 계정에 저장한 자료를 불러옵니다.
+기존 [Eddie 주소](https://eddie-planner.web.app)와 [그 보조 주소](https://eddie-planner.firebaseapp.com), [my-rocky 주소](https://my-rocky.web.app)와 [그 보조 주소](https://my-rocky.firebaseapp.com), [프로젝트 기본 주소](https://rocky-study-planner-6c82f1.web.app)와 [그 보조 주소](https://rocky-study-planner-6c82f1.firebaseapp.com)는 게스트 자료에 접근할 수 있도록 기존 배포를 유지하며 새 주소로 자동 이동시키지 않습니다. 서로 다른 호스트의 `localStorage` 데이터는 자동으로 옮겨지지 않습니다. 게스트 자료를 옮기려면 기존 주소에서 Google 로그인 후, 계정 플래너가 비어 있을 때 **브라우저 데이터 가져오기**를 실행하고 서버 저장 완료를 확인하세요. 새 주소에서 같은 Google 계정으로 로그인하면 계정에 저장한 자료를 불러옵니다.
 
 ## 사용 방법
 
@@ -106,7 +106,7 @@ Firebase를 연결한 후 **Google 로그인**을 선택하면 계정 전용 플
 
 저장 데이터가 손상되었거나 형식이 맞지 않으면 오류를 알리고 자동 저장을 중단하여 원본을 덮어쓰지 않습니다. 저장 공간이나 브라우저 제한으로 저장에 실패해도 화면에서 안내합니다. 새 플래너 시작 확인 창과 저장 오류 안내에서 현재 화면의 데이터를 JSON 파일로 백업할 수 있습니다. 첫 버전에는 백업 파일을 가져오는 UI가 없습니다.
 
-일정은 같은 날짜의 00:00에 시작하거나 24:00에 종료할 수 있습니다. Google 로그인은 Eddie의 계정 저장용이며 실제 Google Calendar 연결, 알림, 다음 날까지 이어지는 단일 일정은 지원하지 않습니다. 반복 일정의 수정·삭제 범위는 기본으로 ‘이 일정만’이 선택되며, ‘전체 반복 일정’으로 바꿀 수 있습니다.
+일정은 같은 날짜의 00:00에 시작하거나 24:00에 종료할 수 있습니다. Google 로그인은 Torch의 계정 저장용이며 실제 Google Calendar 연결, 알림, 다음 날까지 이어지는 단일 일정은 지원하지 않습니다. 반복 일정의 수정·삭제 범위는 기본으로 ‘이 일정만’이 선택되며, ‘전체 반복 일정’으로 바꿀 수 있습니다.
 
 ## 프로젝트 구조
 

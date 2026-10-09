@@ -38,7 +38,7 @@ function GoalTable({ goals, mergeSubjects = true }: { goals: StudyGoal[]; mergeS
 
 function PaperContent({ goals, weekLabel, page, totalPages, totalGoals, mergeSubjects = true }: { goals: StudyGoal[]; weekLabel: string; page: number; totalPages: number; totalGoals: number; mergeSubjects?: boolean }) {
   return <div className="goal-print-paper-content">
-    <header className="goal-print-paper-header"><div><h2>이번 주 학습 목표</h2><span className="goal-print-brand">Eddie</span></div><p>{weekLabel}</p></header>
+    <header className="goal-print-paper-header"><div><h2>이번 주 학습 목표</h2><span className="goal-print-brand">Torch</span></div><p>{weekLabel}</p></header>
     <div className="goal-print-table-space"><GoalTable goals={goals} mergeSubjects={mergeSubjects} /></div>
     <footer className="goal-print-paper-footer"><span>학습 목표 {totalGoals}개</span><span>{page} / {totalPages} 페이지</span></footer>
   </div>;
