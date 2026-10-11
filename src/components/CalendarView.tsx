@@ -456,7 +456,7 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
         </>
       )}
       <div className="cal-footer"><Info size={14} aria-hidden="true" /><span>자습 가능 시간은 하루 24시간에서 과목에 연결되지 않은 일정만 제외해요. 과목 일정은 자습 가능 시간을 줄이지 않아요.</span></div>
-      {printOpen && view === 'week' && <CalendarPrintPreview key={weekStart} weekStart={weekStart} days={days} categories={categories} hiddenCategoryIds={hiddenCategoryIds} timeRange={printTimeRange} onChangeTimeRange={onChangePrintTimeRange} settingsError={printSettingsError} signedIn={signedIn} onClose={() => setPrintOpen(false)} />}
+      {printOpen && view === 'week' && <CalendarPrintPreview key={weekStart} weekStart={weekStart} days={days} categories={categories} subjects={subjects} hiddenCategoryIds={hiddenCategoryIds} timeRange={printTimeRange} onChangeTimeRange={onChangePrintTimeRange} settingsError={printSettingsError} signedIn={signedIn} onClose={() => setPrintOpen(false)} />}
     </section>
   );
 }

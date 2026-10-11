@@ -21,7 +21,7 @@ const fixture: PlannerState = {
     event('midnight-end', { title: '일요일 마지막 공부', date: '2026-10-11', startTime: '23:45', endTime: '24:00' }),
     event('literal', { title: literalTitle, date: '2026-10-06', startTime: '15:00', endTime: '16:00' }),
     event('saturday-all-day', { title: '토요일 종일 일정', type: 'personal', date: '2026-10-10', allDay: true }),
-    ...Array.from({ length: 12 }, (_, index) => event(`all-day-${index}`, { title: `종일 ${index + 1} `.padEnd(80, '긴'), type: 'personal', allDay: true })),
+    ...Array.from({ length: 12 }, (_, index) => event(`all-day-${index}`, { title: `종일 ${index + 1} `.padEnd(80, '긴'), type: index === 0 ? 'math' : 'personal', allDay: true })),
     ...Array.from({ length: 6 }, (_, index) => event(`overlap-${index}`, { title: `겹친 학습 ${index + 1} `.padEnd(80, '나'), date: '2026-10-06', endTime: '12:00' })),
     event('hidden-timed', { type: 'hidden' }),
     event('hidden-all-day', { type: 'hidden', allDay: true }),
@@ -128,6 +128,7 @@ test('weekly preview respects filters, recurrence and selected dates without cha
     const occurrences = sheet(page).locator(`[data-print-event-id="${item.id}"]`);
     for (const occurrence of await occurrences.all()) {
       await expect(occurrence).toContainText(item.title);
+      await expect(occurrence.getByRole('img', { name: '인쇄 후 완료 표시용 빈 체크박스', exact: true })).toHaveCount(item.type === 'math' ? 1 : 0);
       const description = await occurrence.getAttribute('aria-label');
       expect(description).toContain(item.title);
       expect(description).toContain(fixture.categories.find(category => category.id === item.type)!.label);

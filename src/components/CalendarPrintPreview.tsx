@@ -5,6 +5,7 @@ import type { CalendarPrintRange, DaySummary, EventCategory } from '../types';
 import { addDays, minutesToTime, parseDate, timeToMinutes } from '../lib/planner';
 import { buildPrintableWeek, type PrintDay } from '../lib/calendar-print';
 import { DEFAULT_CALENDAR_PRINT_RANGE, getCalendarPrintTicks, isCalendarPrintRange } from '../lib/calendar-print-range';
+import { isSubjectCategory } from '../lib/subjects';
 import Modal from './Modal';
 import './calendar-print.css';
 
@@ -12,6 +13,7 @@ interface Props {
   weekStart: string;
   days: DaySummary[];
   categories: EventCategory[];
+  subjects: string[];
   hiddenCategoryIds: string[];
   timeRange?: CalendarPrintRange;
   onChangeTimeRange: (range: CalendarPrintRange) => string | null;
@@ -32,7 +34,11 @@ function fullDate(value: string): string {
   return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일`;
 }
 
-function PrintContent({ days, legend, weekLabel, timeRange, fit = 1, gridHeight = MIN_GRID_HEIGHT, legendScale = 1 }: { days: PrintDay[]; legend: EventCategory[]; weekLabel: string; timeRange: CalendarPrintRange; fit?: number; gridHeight?: number; legendScale?: number }) {
+function CompletionBox() {
+  return <span className="calendar-print-event-check" role="img" aria-label="인쇄 후 완료 표시용 빈 체크박스" />;
+}
+
+function PrintContent({ days, legend, subjectCategoryIds, weekLabel, timeRange, fit = 1, gridHeight = MIN_GRID_HEIGHT, legendScale = 1 }: { days: PrintDay[]; legend: EventCategory[]; subjectCategoryIds: Set<string>; weekLabel: string; timeRange: CalendarPrintRange; fit?: number; gridHeight?: number; legendScale?: number }) {
   const duration = timeRange.endMinute - timeRange.startMinute;
   const ticks = getCalendarPrintTicks(timeRange);
   const position = (minute: number) => `${(minute - timeRange.startMinute) / duration * 100}%`;
@@ -42,7 +48,12 @@ function PrintContent({ days, legend, weekLabel, timeRange, fit = 1, gridHeight 
       {legend.length > 0 && <div className="calendar-print-legend" aria-label="인쇄한 일정 종류"><div className="calendar-print-legend-items">{legend.map(category => <span key={category.id}><i style={{ backgroundColor: category.color }} aria-hidden="true" />{category.label}</span>)}</div></div>}
     </header>
     <div className="calendar-print-day-headers"><div className="calendar-print-header-corner">시간</div>{days.map((day, index) => <div className="calendar-print-day-header" data-print-date={day.date} key={day.date}><strong>{WEEKDAYS[index]}</strong><span>{parseDate(day.date).getMonth() + 1}/{parseDate(day.date).getDate()}</span></div>)}</div>
-    <div className="calendar-print-all-day"><div className="calendar-print-all-day-label">종일</div>{days.map(day => <div className="calendar-print-all-day-cell" key={day.date}>{day.allDay.map(({ event, category }) => <div className="calendar-print-all-day-event" data-print-event-id={event.id} data-print-date={day.date} key={event.id} style={{ '--calendar-event-color': category.color } as CSSProperties} aria-label={`${day.date}, 종일, ${category.label}, ${event.title}`} title={`${category.label} · ${event.title}`}><strong>{event.title}</strong><span>{category.label}</span></div>)}</div>)}</div>
+    <div className="calendar-print-all-day"><div className="calendar-print-all-day-label">종일</div>{days.map(day => <div className="calendar-print-all-day-cell" key={day.date}>{day.allDay.map(({ event, category }) => {
+      const subjectEvent = subjectCategoryIds.has(category.id);
+      return <div className={`calendar-print-all-day-event${subjectEvent ? ' calendar-print-subject-event' : ''}`} data-print-event-id={event.id} data-print-date={day.date} key={event.id} style={{ '--calendar-event-color': category.color } as CSSProperties} aria-label={`${day.date}, 종일, ${category.label}, ${event.title}`} title={`${category.label} · ${event.title}`}>
+        {subjectEvent && <CompletionBox />}<strong>{event.title}</strong><span>{category.label}</span>
+      </div>;
+    })}</div>)}</div>
     <div className="calendar-print-grid" aria-label={`월요일부터 일요일까지 ${minutesToTime(timeRange.startMinute)}–${minutesToTime(timeRange.endMinute)} 시간표`}>
       <div className="calendar-print-time-ruler" aria-hidden="true">{ticks.map(minute => <span key={minute} style={{ top: position(minute) }}>{minutesToTime(minute)}</span>)}</div>
       {days.map(day => <div className="calendar-print-day-column" data-print-date={day.date} key={day.date}>
@@ -50,7 +61,9 @@ function PrintContent({ days, legend, weekLabel, timeRange, fit = 1, gridHeight 
         {day.timed.map(({ event, category, topMinute, heightMinutes, column, columnCount }) => {
           const visualMinutes = heightMinutes / duration * 1440;
           const compact = visualMinutes < 90 || columnCount > 2;
-          return <div key={event.id} className={`calendar-print-event${compact ? ' calendar-print-event-compact' : ''}`} data-print-event-id={event.id} data-print-date={day.date} style={{ '--calendar-event-color': category.color, top: position(topMinute), height: `${heightMinutes / duration * 100}%`, left: `calc(${column / columnCount * 100}% + .25mm)`, width: `calc(${100 / columnCount}% - .5mm)` } as CSSProperties} aria-label={`${day.date}, ${event.startTime}–${event.endTime}, ${category.label}, ${event.title}`} title={`${event.startTime}–${event.endTime} · ${category.label} · ${event.title}`}>
+          const subjectEvent = subjectCategoryIds.has(category.id);
+          return <div key={event.id} className={`calendar-print-event${compact ? ' calendar-print-event-compact' : ''}${subjectEvent ? ' calendar-print-subject-event' : ''}`} data-print-event-id={event.id} data-print-date={day.date} style={{ '--calendar-event-color': category.color, top: position(topMinute), height: `${heightMinutes / duration * 100}%`, left: `calc(${column / columnCount * 100}% + .25mm)`, width: `calc(${100 / columnCount}% - .5mm)` } as CSSProperties} aria-label={`${day.date}, ${event.startTime}–${event.endTime}, ${category.label}, ${event.title}`} title={`${event.startTime}–${event.endTime} · ${category.label} · ${event.title}`}>
+            {subjectEvent && <CompletionBox />}
             {compact ? <span className="calendar-print-event-line">{event.startTime}–{event.endTime} {event.title}</span> : <><span className="calendar-print-event-time">{event.startTime}–{event.endTime}</span><strong className="calendar-print-event-title">{event.title}</strong>{visualMinutes >= 120 && <span className="calendar-print-event-category">{category.label}</span>}</>}
           </div>;
         })}
@@ -59,11 +72,12 @@ function PrintContent({ days, legend, weekLabel, timeRange, fit = 1, gridHeight 
   </div>;
 }
 
-export default function CalendarPrintPreview({ weekStart, days, categories, hiddenCategoryIds, timeRange = DEFAULT_CALENDAR_PRINT_RANGE, onChangeTimeRange, settingsError, signedIn, onClose }: Props) {
+export default function CalendarPrintPreview({ weekStart, days, categories, subjects, hiddenCategoryIds, timeRange = DEFAULT_CALENDAR_PRINT_RANGE, onChangeTimeRange, settingsError, signedIn, onClose }: Props) {
   const [startTime, setStartTime] = useState(() => minutesToTime(timeRange.startMinute));
   const [endTime, setEndTime] = useState(() => timeRange.endMinute === 1440 ? '00:00' : minutesToTime(timeRange.endMinute));
   const [rangeError, setRangeError] = useState('');
   const printableDays = useMemo(() => buildPrintableWeek(days, categories, hiddenCategoryIds, timeRange), [days, categories, hiddenCategoryIds, timeRange]);
+  const subjectCategoryIds = useMemo(() => new Set(categories.filter(category => isSubjectCategory(category, subjects)).map(category => category.id)), [categories, subjects]);
   const legend = useMemo(() => {
     const used = new Map<string, EventCategory>();
     for (const day of printableDays) for (const item of [...day.allDay, ...day.timed]) used.set(item.category.id, item.category);
@@ -152,7 +166,7 @@ export default function CalendarPrintPreview({ weekStart, days, categories, hidd
     }
     void prepare();
     return () => { active = false; };
-  }, [printableDays, legend, weekLabel, attempt]);
+  }, [printableDays, legend, subjectCategoryIds, weekLabel, attempt]);
 
   function print() {
     if (!ready || rangeError) return;
@@ -184,14 +198,14 @@ export default function CalendarPrintPreview({ weekStart, days, categories, hidd
           {settingsError && <p className="form-error" role="alert">{settingsError}</p>}
         </fieldset>
         <p className="calendar-print-preview-status" role="status">{ready ? 'A4 가로 · 1페이지' : error ? '미리보기를 준비하지 못했어요.' : '인쇄할 시간표를 준비하고 있어요…'}</p>
-        <p className="calendar-print-preview-hint">{ready && fit < .98 ? `한 장에 맞춰 ${Math.round(fit * 100)}% 크기로 줄였어요.` : '일정이 많으면 한 장에 맞춰 글씨가 작아져요.'}</p>
+        <p className="calendar-print-preview-hint">{ready && fit < .98 ? `한 장에 맞춰 ${Math.round(fit * 100)}% 크기로 줄였어요.` : '일정이 많으면 한 장에 맞춰 글씨가 작아져요.'} 과목 일정 오른쪽 위의 빈 체크박스는 인쇄 후 완료 표시용이에요.</p>
         {error && <div className="calendar-print-error" role="alert"><p>{error}</p>{!ready && <button type="button" className="button button-secondary" onClick={() => setAttempt(value => value + 1)}><RotateCcw size={14} />다시 준비</button>}</div>}
         <div className="calendar-print-preview-viewport" ref={viewport}>{ready && !rangeError && <div className="calendar-print-page-frame" style={{ width: 297 * MM_TO_PX * screenScale, height: 210 * MM_TO_PX * screenScale, '--calendar-screen-scale': screenScale } as CSSProperties}>
-          <article className="calendar-print-page" aria-label="주간 시간표"><div className="calendar-print-content-frame"><PrintContent days={printableDays} legend={legend} weekLabel={weekLabel} timeRange={timeRange} {...layout} /></div></article>
+          <article className="calendar-print-page" aria-label="주간 시간표"><div className="calendar-print-content-frame"><PrintContent days={printableDays} legend={legend} subjectCategoryIds={subjectCategoryIds} weekLabel={weekLabel} timeRange={timeRange} {...layout} /></div></article>
         </div>}</div>
       </div>
       <div className="modal-footer"><button type="button" className="button button-secondary" onClick={onClose}>미리보기 닫기</button><button type="button" className="button button-primary" disabled={!ready || !!rangeError} onClick={print}><Printer size={16} />인쇄하기</button></div>
     </Modal>
-    <div className="calendar-print-measure" ref={measurement} aria-hidden="true"><PrintContent days={printableDays} legend={legend} weekLabel={weekLabel} timeRange={timeRange} /></div>
+    <div className="calendar-print-measure" ref={measurement} aria-hidden="true"><PrintContent days={printableDays} legend={legend} subjectCategoryIds={subjectCategoryIds} weekLabel={weekLabel} timeRange={timeRange} /></div>
   </div>, document.body);
 }

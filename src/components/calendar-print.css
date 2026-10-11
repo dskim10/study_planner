@@ -52,6 +52,10 @@
 .calendar-print-event-category { display: block; margin-top: .5mm; font-size: 6pt; color: #444; overflow-wrap: anywhere; }
 .calendar-print-event.calendar-print-event-compact { display: flex; align-items: center; padding: 0 .4mm; }
 .calendar-print-event-line { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 6.5pt; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.calendar-print-all-day-event.calendar-print-subject-event { position: relative; }
+.calendar-print-subject-event { padding-right: 2.8mm; }
+.calendar-print-subject-event > .calendar-print-event-check { position: absolute; top: .25mm; right: .45mm; display: block; box-sizing: border-box; width: 1.8mm; height: 1.8mm; margin: 0; border: .2mm solid #333; border-radius: .15mm; background: #fff; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.calendar-print-event-compact.calendar-print-subject-event { padding-right: 2.8mm; }
 .calendar-print-measure { position: fixed; left: -100000px; top: 0; width: 277mm; visibility: hidden; pointer-events: none; z-index: -1; }
 @media (max-width: 600px) { .calendar-print-preview-body { padding: 14px 12px 18px; }.calendar-print-modal .modal-header { padding: 18px 18px 14px; }.calendar-print-modal .modal-header h2 { font-size: 17px; }.calendar-print-modal .modal-footer { padding: 14px 18px; }.calendar-print-modal .modal-footer .button { font-size: 11px; padding: 8px 11px; } }
 @page calendar-print { size: A4 landscape; margin: 10mm; }
