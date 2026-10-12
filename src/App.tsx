@@ -85,7 +85,9 @@ export default function App() {
   const completed = weekGoals.filter(goal => goal.completed).length;
   // Use actual gaps so overlapping subject and other events are only excluded once.
   const remaining = days.reduce((total, day) => total + day.freeSlots.reduce((minutes, slot) => minutes + slot.end - slot.start, 0), 0);
-  const percent = remaining + planned ? Math.round(planned / (remaining + planned) * 100) : 0;
+  const percent = available > 0 ? Math.round(planned / available * 100) : planned === 0 ? 0 : null;
+  const progressPercent = percent === null ? 0 : Math.min(percent, 100);
+  const planningRatioLabel = percent === null ? '자습 가능 시간이 0분이라 비율을 계산할 수 없어요.' : `자습 가능 시간 대비 ${percent}%`;
   const start = parseDate(weekStart);
   const end = parseDate(addDays(weekStart, 6));
   const weekLabel = `${start.getFullYear()}년 ${start.getMonth() + 1}월 ${start.getDate()}일 – ${end.getFullYear() !== start.getFullYear() ? `${end.getFullYear()}년 ` : ''}${end.getMonth() !== start.getMonth() ? `${end.getMonth() + 1}월 ` : ''}${end.getDate()}일`;
@@ -244,8 +246,8 @@ export default function App() {
           </article>
           <article className="stat-card planned-stat">
             <div className="stat-top"><span>계획한 학습 시간</span><div className="stat-icon lavender"><Target size={19} /></div></div>
-            <div className="stat-value">{formatDuration(planned)}<span>캘린더 기준</span></div>
-            <div className="stat-progress" role="progressbar" aria-label="계획·남은 시간 중 계획 비율" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${percent}%` }} /></div>
+            <div className="stat-value">{formatDuration(planned)}<span aria-label={planningRatioLabel}>{percent === null ? '자습 가능 시간 0분' : `자습 대비 ${percent}%`}</span></div>
+            <div className="stat-progress" role="progressbar" aria-label="자습 가능 시간 대비 계획 비율" aria-valuenow={progressPercent} aria-valuemin={0} aria-valuemax={100} aria-valuetext={planningRatioLabel}><span style={{ width: `${progressPercent}%` }} /></div>
             <p>학습 목표 {weekGoals.length}개 중 {completed}개 완료</p>
           </article>
           <article className="stat-card remaining-stat">
