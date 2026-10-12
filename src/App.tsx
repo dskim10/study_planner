@@ -1,22 +1,31 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowDownToLine, ArrowRight, CalendarDays, Check, CheckCheck, ChevronLeft, ChevronRight, CircleHelp, Clock3, Coffee, ListTodo, LockKeyhole, Plus, RotateCcw, Settings2, Sparkles, Target, X } from 'lucide-react';
 import type { CalendarPrintRange, EventCategory, ScheduleEvent, StudyGoal } from './types';
-import { addDays, createDemoState, createEmptyState, formatDuration, getStudyPlanSummary, getWeekSummary, parseDate, startOfWeek, toDateKey } from './lib/planner';
+import { addDays, createDemoState, createEmptyState, formatDuration, getStudyPlanSummary, getWeekSummary, occursOn, parseDate, startOfWeek, timeToMinutes, toDateKey } from './lib/planner';
 import { addSubject, getSubjects, isSubjectCategory, moveSubject, removeSubject, renameSubject } from './lib/subjects';
 import { usePlanner } from './hooks/usePlanner';
 import { getCategoryError, removeCategory, updateCategoryColor } from './lib/categories';
 import { deleteEvent as deleteScheduleEvent, saveEvent as saveScheduleEvent } from './lib/event-occurrences';
 import { isCalendarPrintRange } from './lib/calendar-print-range';
+import type { EventMoveTarget } from './lib/calendar-event-move';
 import CalendarView from './components/CalendarView';
 import WeeklyGoals from './components/WeeklyGoals';
 import EventEditor from './components/EventEditor';
-import type { EventEditScope } from './components/EventEditor';
+import type { EventEditScope, EventTimingAction } from './components/EventEditor';
 import Modal from './components/Modal';
 import CategoryCreator from './components/CategoryCreator';
 import CategoryDeleteDialog from './components/CategoryDeleteDialog';
 import CategoryOptions from './components/CategoryOptions';
 import AccountMenu from './components/AccountMenu';
 import StudyTimeSummary from './components/StudyTimeSummary';
+
+function assertTimingSource(events: ScheduleEvent[], source: ScheduleEvent, occurrenceDate: string): ScheduleEvent {
+  const current = events.find(event => event.id === source.id);
+  if (!current || JSON.stringify(current) !== JSON.stringify(source) || !occursOn(current, occurrenceDate)) {
+    throw new Error('변경하려던 일정이 바뀌었어요. 캘린더에서 다시 선택해 주세요.');
+  }
+  return current;
+}
 
 function MiniCalendar({ weekStart, onChange }: { weekStart: string; onChange: (date: string) => void }) {
   const [month, setMonth] = useState(weekStart.slice(0, 7));
@@ -49,7 +58,7 @@ export default function App() {
   const { data, setData, error: storageError, readOnly, account } = planner;
   const [page, setPage] = useState(() => location.hash === '#plan' ? 'plan' : 'calendar');
   const [weekStart, setWeekStart] = useState(() => startOfWeek(toDateKey(new Date())));
-  const [editor, setEditor] = useState<{ event?: ScheduleEvent; date: string; time?: string; endTime?: string } | null>(null);
+  const [editor, setEditor] = useState<{ event?: ScheduleEvent; date: string; time?: string; endTime?: string; moveTarget?: EventMoveTarget; timingAction?: EventTimingAction } | null>(null);
   const [dataDialogOpen, setDataDialogOpen] = useState(false);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
@@ -61,6 +70,7 @@ export default function App() {
   useEffect(() => { const listener = () => setPage(location.hash === '#plan' ? 'plan' : 'calendar'); window.addEventListener('hashchange', listener); return () => window.removeEventListener('hashchange', listener); }, []);
   useEffect(() => { setEditor(null); setCategoryDialogOpen(false); setDeletingCategoryId(null); setResetMode(null); setDataDialogOpen(false); setCloudReloadOpen(false); setToast(''); }, [account?.uid]);
   useEffect(() => { setEditor(null); }, [page, readOnly]);
+  useEffect(() => { setEditor(previous => previous?.moveTarget ? null : previous); }, [weekStart]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(''), 3000); return () => clearTimeout(timer); }, [toast]);
 
   const subjects = useMemo(() => getSubjects(data), [data.subjects, data.goals]);
@@ -84,16 +94,53 @@ export default function App() {
   function saveEvent(event: ScheduleEvent, scope: EventEditScope): string | null {
     try {
       const occurrence = scope === 'single' && editor?.event ? { eventId: editor.event.id, date: editor.date } : undefined;
-      if (!setData(prev => ({ ...prev, events: saveScheduleEvent(prev.events, event, occurrence) }))) return '지금은 변경할 수 없어요. 저장 상태를 확인해 주세요.';
+      if (!setData(prev => {
+        if (editor?.moveTarget && editor.event) assertTimingSource(prev.events, editor.event, editor.date);
+        return { ...prev, events: saveScheduleEvent(prev.events, event, occurrence) };
+      })) return '지금은 변경할 수 없어요. 저장 상태를 확인해 주세요.';
       setEditor(null);
       setToast(occurrence ? '선택한 일정만 수정했어요. 학습 시간도 업데이트했어요.' : '일정을 반영했어요. 학습 시간도 업데이트했어요.');
       return null;
     } catch (error) { return error instanceof Error ? error.message : '일정을 저장하지 못했어요.'; }
   }
+  function changeEventTiming(source: ScheduleEvent, occurrenceDate: string, target: EventMoveTarget, action: EventTimingAction): string | null {
+    try {
+      if (readOnly) return '지금은 변경할 수 없어요. 저장 상태를 확인해 주세요.';
+      assertTimingSource(data.events, source, occurrenceDate);
+      parseDate(target.date);
+      const duration = timeToMinutes(target.endTime) - timeToMinutes(target.startTime);
+      if (source.allDay || duration <= 0) return '종료 시간은 시작 시간보다 늦어야 하며 당일 24:00을 넘을 수 없어요.';
+      if (action === 'resize' && (target.date !== occurrenceDate || target.startTime !== source.startTime)) {
+        return '일정의 날짜와 시작 시간은 유지하고 종료 시간만 변경해 주세요.';
+      }
+      if (action === 'move' && duration !== timeToMinutes(source.endTime) - timeToMinutes(source.startTime)) {
+        return '일정의 길이를 유지하고 하루 안의 시간으로 옮겨 주세요.';
+      }
+      if (target.date === occurrenceDate && target.startTime === source.startTime && target.endTime === source.endTime) return null;
+      if (source.recurrence !== 'none') {
+        setEditor({ event: source, date: occurrenceDate, moveTarget: target, timingAction: action });
+        return null;
+      }
+      if (!setData(previous => {
+        const current = assertTimingSource(previous.events, source, occurrenceDate);
+        const changed = action === 'resize'
+          ? { ...current, endTime: target.endTime }
+          : { ...current, date: target.date, startTime: target.startTime, endTime: target.endTime };
+        return { ...previous, events: saveScheduleEvent(previous.events, changed) };
+      })) return '지금은 변경할 수 없어요. 저장 상태를 확인해 주세요.';
+      setToast(action === 'resize' ? '일정의 종료 시간을 변경했어요. 학습 시간도 업데이트했어요.' : '일정을 옮겼어요. 학습 시간도 업데이트했어요.');
+      return null;
+    } catch (error) { return error instanceof Error ? error.message : '일정의 시간을 변경하지 못했어요.'; }
+  }
+  function moveEvent(source: ScheduleEvent, occurrenceDate: string, target: EventMoveTarget): string | null { return changeEventTiming(source, occurrenceDate, target, 'move'); }
+  function resizeEvent(source: ScheduleEvent, occurrenceDate: string, target: EventMoveTarget): string | null { return changeEventTiming(source, occurrenceDate, target, 'resize'); }
   function deleteEvent(id: string, scope: EventEditScope): string | null {
     try {
       const occurrenceDate = scope === 'single' ? editor?.date : undefined;
-      if (!setData(prev => ({ ...prev, events: deleteScheduleEvent(prev.events, id, occurrenceDate) }))) return '지금은 변경할 수 없어요. 저장 상태를 확인해 주세요.';
+      if (!setData(prev => {
+        if (editor?.moveTarget && editor.event) assertTimingSource(prev.events, editor.event, editor.date);
+        return { ...prev, events: deleteScheduleEvent(prev.events, id, occurrenceDate) };
+      })) return '지금은 변경할 수 없어요. 저장 상태를 확인해 주세요.';
       setEditor(null);
       setToast(occurrenceDate ? '선택한 날짜의 일정만 삭제했어요.' : '일정을 삭제했어요.');
       return null;
@@ -209,14 +256,14 @@ export default function App() {
         </section>
         {page === 'calendar' ? <>
           <StudyTimeSummary summary={studyPlan} />
-          <CalendarView key={account?.uid ?? 'guest'} weekStart={weekStart} days={days} events={data.events} categories={data.categories} subjects={subjects} hiddenCategoryIds={hiddenCategoryIds} printTimeRange={data.calendarPrintRange} onChangePrintTimeRange={changePrintTimeRange} printSettingsError={storageError} signedIn={!!account} disabled={readOnly} onToggleCategory={toggleCategory} onAddCategory={() => setCategoryDialogOpen(true)} onChangeCategoryColor={changeCategoryColor} onDeleteCategory={setDeletingCategoryId} onAddEvent={(date, time, endTime) => setEditor({ date: date ?? weekStart, time, endTime })} onEditEvent={(event, date) => setEditor({ event, date })} onWeekChange={setWeekStart} />
+          <CalendarView key={account?.uid ?? 'guest'} weekStart={weekStart} days={days} events={data.events} categories={data.categories} subjects={subjects} hiddenCategoryIds={hiddenCategoryIds} printTimeRange={data.calendarPrintRange} onChangePrintTimeRange={changePrintTimeRange} printSettingsError={storageError} signedIn={!!account} disabled={readOnly} onToggleCategory={toggleCategory} onAddCategory={() => setCategoryDialogOpen(true)} onChangeCategoryColor={changeCategoryColor} onDeleteCategory={setDeletingCategoryId} onAddEvent={(date, time, endTime) => setEditor({ date: date ?? weekStart, time, endTime })} onEditEvent={(event, date) => setEditor({ event, date })} onMoveEvent={moveEvent} onResizeEvent={resizeEvent} onWeekChange={setWeekStart} />
         </> : <WeeklyGoals key={account?.uid ?? 'guest'} weekStart={weekStart} days={days} goals={data.goals} subjects={subjects} studyPlan={studyPlan} disabled={readOnly} onMoveSubject={changeSubjectOrder} onAddSubject={name => saveSubject(name)} onRenameSubject={(oldName, name) => saveSubject(name, oldName)} onDeleteSubject={deleteSubject} onSaveGoal={saveGoal} onDeleteGoal={id => { setData(prev => ({ ...prev, goals: prev.goals.filter(goal => goal.id !== id) })); setToast('학습 목표를 삭제했어요.'); }} onToggleGoal={id => setData(prev => ({ ...prev, goals: prev.goals.map(goal => goal.id === id ? { ...goal, completed: !goal.completed } : goal) }))} />}
         <footer className="content-footer"><div><span className="free-dot" /><span>자습 가능 시간 = 하루 24시간 − 과목에 연결되지 않은 일정 · 수면·식사·휴식도 개인 일정으로 등록해 주세요.</span></div><span>ONE STEP, EVERY DAY.</span></footer>
         {page === 'calendar' && <a className="plan-prompt" href="#plan"><span className="prompt-icon"><ListTodo size={22} /></span><div><strong>빈 시간을 찾았다면, 이번 주 목표를 세워 볼까요?</strong><p>과목별 학습자료와 공부할 범위를 적어 나만의 계획을 완성해요.</p></div><span className="prompt-cta">주간 계획 세우기<ArrowRight size={17} /></span></a>}
         </div>
       </main>
     </div>
-    {editor && !readOnly && <EventEditor event={editor.event} date={editor.date} time={editor.time} endTime={editor.endTime} categories={data.categories} subjects={subjects} onAddCategory={addCategory} onClose={() => setEditor(null)} onSave={saveEvent} onDelete={deleteEvent} />}
+    {editor && !readOnly && <EventEditor event={editor.event} date={editor.date} time={editor.time} endTime={editor.endTime} moveTarget={editor.moveTarget} timingAction={editor.timingAction} categories={data.categories} subjects={subjects} onAddCategory={addCategory} onClose={() => setEditor(null)} onSave={saveEvent} onDelete={deleteEvent} />}
     {categoryDialogOpen && !readOnly && <Modal title="새 일정 종류" description="이름과 색상을 정하면 모든 일정에서 사용할 수 있어요." onClose={() => setCategoryDialogOpen(false)}><div className="modal-body"><CategoryCreator autoFocus={false} onAddCategory={addCategory} onCreated={() => setCategoryDialogOpen(false)} onCancel={() => setCategoryDialogOpen(false)} /></div></Modal>}
     {deletingCategory && !readOnly && <CategoryDeleteDialog key={deletingCategory.id} category={deletingCategory} categories={data.categories} events={data.events} onClose={() => setDeletingCategoryId(null)} onDelete={replacementId => deleteCategory(deletingCategory.id, replacementId)} />}
     {dataDialogOpen && !resetMode && <DataDialog signedIn={!!account} disabled={readOnly && (!!account || !planner.storageBlocked)} onClose={() => setDataDialogOpen(false)} onReset={() => setResetMode('empty')} onDemo={() => setResetMode('demo')} />}

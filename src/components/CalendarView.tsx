@@ -18,6 +18,8 @@ import { isSubjectCategory } from '../lib/subjects';
 import CategoryOptions from './CategoryOptions';
 import CalendarPrintPreview from './CalendarPrintPreview';
 import { CALENDAR_STEP_MINUTES, formatSelectionTimeRange, getPointerMinute, getSelectionRange } from '../lib/calendar-selection';
+import type { EventMoveTarget } from '../lib/calendar-event-move';
+import useCalendarEventMove from '../hooks/useCalendarEventMove';
 
 export interface CalendarViewProps {
   weekStart: string;
@@ -37,6 +39,8 @@ export interface CalendarViewProps {
   onDeleteCategory: (id: string) => void;
   onAddEvent: (date?: string, time?: string, endTime?: string) => void;
   onEditEvent: (event: ScheduleEvent, occurrenceDate: string) => void;
+  onMoveEvent: (event: ScheduleEvent, occurrenceDate: string, target: EventMoveTarget) => string | null;
+  onResizeEvent: (event: ScheduleEvent, occurrenceDate: string, target: EventMoveTarget) => string | null;
   onWeekChange: (weekStart: string) => void;
 }
 
@@ -111,7 +115,7 @@ function eventDescription(event: ScheduleEvent, date: string, categoryLabel: str
   return `${readableDate(date)}, ${categoryLabel}, ${event.title}, ${event.allDay ? '종일' : `${event.startTime}부터 ${event.endTime}까지`}. 일정 수정`;
 }
 
-function CalendarView({ weekStart, days, events, categories, subjects, hiddenCategoryIds, printTimeRange, onChangePrintTimeRange, printSettingsError, signedIn, disabled, onToggleCategory, onAddCategory, onChangeCategoryColor, onDeleteCategory, onAddEvent, onEditEvent, onWeekChange }: CalendarViewProps) {
+function CalendarView({ weekStart, days, events, categories, subjects, hiddenCategoryIds, printTimeRange, onChangePrintTimeRange, printSettingsError, signedIn, disabled, onToggleCategory, onAddCategory, onChangeCategoryColor, onDeleteCategory, onAddEvent, onEditEvent, onMoveEvent, onResizeEvent, onWeekChange }: CalendarViewProps) {
   const [view, setView] = useState<'week' | 'month'>('week');
   const [printOpen, setPrintOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -125,6 +129,7 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
   const hiddenCategories = useMemo(() => new Set(hiddenCategoryIds), [hiddenCategoryIds]);
   const hasSubjectCategories = categories.some(category => isSubjectCategory(category, subjects));
   const selectionColor = categories[0]?.color ?? '#419f9b';
+  const eventMove = useCalendarEventMove({ weekStart, events, hiddenCategoryIds, disabled: !!disabled || printOpen || view !== 'week', onMoveEvent, onResizeEvent });
 
   const clearGesture = useCallback(() => {
     const gesture = gestureRef.current;
@@ -174,6 +179,7 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
     if (disabled || printOpen || event.pointerType !== 'mouse' || !event.isPrimary || event.button !== 0) return;
     const target = event.target as HTMLElement;
     if (target.closest('.cal-event') || (target !== event.currentTarget && !target.closest('.cal-empty-slot'))) return;
+    eventMove.cancel();
     clearGesture();
     const rect = event.currentTarget.getBoundingClientRect();
     const anchor = getPointerMinute(event.clientY, rect.top, rect.height);
@@ -332,8 +338,12 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
           <span className="cal-legend-free"><i aria-hidden="true" />빈 시간</span>
           <button type="button" className="cal-add-category" onClick={onAddCategory}><Plus size={12} aria-hidden="true" />일정 종류 추가</button>
         </div>
-        <span className="cal-click-hint">빈 시간을 누르거나 드래그해 일정을 추가하세요</span>
+        <span className="cal-click-hint">빈칸은 드래그해 추가하고, 일정은 끌어서 옮기세요</span>
       </div>
+
+      {view === 'week' && <p className="cal-filter-note cal-move-hint" id="calendar-event-move-hint">일정 본문을 끌면 이동하고, 하단 경계에서 위아래 화살표 커서가 보일 때 끌면 종료 시간을 15분 단위로 조절해요. 터치 화면에서는 일정을 끌어 이동하고 빈 시간을 쓸어 스크롤해요. 키보드는 Alt + 방향키로 이동, Alt + Shift + 위·아래 방향키로 종료 시간 조절을 시작하고, 방향키로 조정한 뒤 Enter로 확정하거나 Esc로 취소해요.</p>}
+      <span className="cal-move-announcement" role="status" aria-live="polite" aria-atomic="true">{eventMove.announcement}</span>
+      {eventMove.error && <p className="cal-filter-note form-error" role="alert">{eventMove.error}</p>}
 
       {hasSubjectCategories && <p className="cal-filter-note cal-subject-category-note" id="calendar-subject-category-hint"><LockKeyhole size={12} aria-hidden="true" /><span>과목 종류의 색상은 옵션에서 변경해요. 이름과 삭제는 주간 학습 계획의 과목 관리에서 변경할 수 있어요.</span></p>}
 
@@ -356,7 +366,7 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
 
       {view === 'week' ? (
         <div className="cal-overflow" tabIndex={0} role="region" aria-label="주간 시간표, 가로 스크롤 가능. 빈 시간은 화살표 키로 이동하고 Enter 키로 일정을 추가할 수 있습니다">
-          <div className="cal-week">
+          <div className="cal-week" onPointerDownCapture={() => { suppressPointerClick.current = false; eventMove.resetClick(); }} onClickCapture={eventMove.clickCapture}>
             <div className="cal-day-headers">
               <div className="cal-header-corner"><Clock3 size={15} strokeWidth={1.6} aria-hidden="true" /></div>
               {days.map((day, index) => (
@@ -382,7 +392,7 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
                 </div>
               ))}
             </div>
-            <div className="cal-time-grid" style={{ '--cal-hour-height': `${HOUR_HEIGHT}px` } as CSSProperties}>
+            <div ref={eventMove.gridRef} className={`cal-time-grid ${eventMove.movingSource ? eventMove.movingSource.mode === 'resize' ? 'cal-event-resizing' : 'cal-event-dragging' : ''}`} style={{ '--cal-hour-height': `${HOUR_HEIGHT}px` } as CSSProperties}>
               <div className="cal-time-ruler" style={{ height: gridHeight }} aria-hidden="true">
                 {hours.map((minute) => <span key={minute} style={{ top: (minute - firstMinute) / 60 * HOUR_HEIGHT }}>{minutesToTime(minute)}</span>)}
                 <span className="cal-last-time" style={{ top: gridHeight }}>{minutesToTime(lastMinute)}</span>
@@ -402,19 +412,32 @@ function CalendarView({ weekStart, days, events, categories, subjects, hiddenCat
                       <button
                         type="button"
                         key={event.id}
-                        className={`cal-event cal-event-color ${end - start < 75 ? 'cal-event-short' : ''} ${end - start < 45 ? 'cal-event-tiny' : ''} ${columns > 1 ? 'cal-event-narrow' : ''}`}
+                        className={`cal-event cal-event-color ${end - start < 75 ? 'cal-event-short' : ''} ${end - start < 45 ? 'cal-event-tiny' : ''} ${columns > 1 ? 'cal-event-narrow' : ''} ${eventMove.movingSource?.id === event.id && eventMove.movingSource.date === day.date ? 'cal-event-moving' : ''}`}
+                        data-event-id={event.id}
                         style={{ ...eventStyle(event), top: Math.min(gridHeight - 2, (start - firstMinute) / 60 * HOUR_HEIGHT + 2), height: Math.min(Math.max(2, gridHeight - (start - firstMinute) / 60 * HOUR_HEIGHT - 2), Math.max(22, (end - start) / 60 * HOUR_HEIGHT - 4)), left: `calc(${column / columns * 100}% + 3px)`, width: `calc(${100 / columns}% - 6px)` }}
                         onClick={() => onEditEvent(event, day.date)}
+                        onPointerDown={pointer => eventMove.pointerDown(pointer, event, day.date)}
+                        onPointerMove={eventMove.pointerMove}
+                        onPointerUp={eventMove.pointerUp}
+                        onPointerCancel={eventMove.pointerCancel}
+                        onLostPointerCapture={eventMove.pointerCancel}
+                        onKeyDown={key => eventMove.keyDown(key, event, day.date)}
+                        onBlur={eventMove.blur}
+                        onDragStart={drag => drag.preventDefault()}
+                        aria-describedby="calendar-event-move-hint"
+                        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight Alt+Shift+ArrowUp Alt+Shift+ArrowDown"
                         aria-label={eventDescription(event, day.date, getCategory(event).label)}
                         title={`${getCategory(event).label} · ${event.title}\n${event.startTime}–${event.endTime}${event.recurrence !== 'none' ? ` · ${getRecurrenceSummary(event)}` : ''}`}
                       >
                         <span className="cal-event-title">{event.title}</span>
                         <span className="cal-event-time">{event.startTime} – {event.endTime}</span>
                         <span className="cal-event-kind"><span>{getCategory(event).label}</span>{event.recurrence !== 'none' && <Repeat2 size={10} aria-label={getRecurrenceSummary(event)} />}</span>
+                        <span className="cal-event-resize-edge" aria-hidden="true" />
                       </button>
                     ))}
                     {day.date === today && currentMinutes >= firstMinute && currentMinutes < lastMinute && <div className="cal-now-line" style={{ top: (currentMinutes - firstMinute) / 60 * HOUR_HEIGHT }} aria-label={`현재 시각 ${minutesToTime(currentMinutes)}`} />}
                     {selection?.date === day.date && <div className="cal-selection-preview" role="status" aria-label="새 일정 미리보기" data-selection-start={selection.start} data-selection-end={selection.end} style={{ top: selection.start / 60 * HOUR_HEIGHT, height: (selection.end - selection.start) / 60 * HOUR_HEIGHT, '--selection-color': selectionColor, '--selection-text': selectionTextColor(selectionColor) } as CSSProperties}><div className={`cal-selection-preview-card ${selection.start / 60 * HOUR_HEIGHT + 44 > gridHeight ? 'cal-selection-preview-bottom' : ''}`}><strong>(제목 없음)</strong><span>{formatSelectionTimeRange(selection.start, selection.end)}</span></div></div>}
+                    {eventMove.preview?.date === day.date && <div className={eventMove.preview.mode === 'resize' ? 'cal-event-resize-preview' : 'cal-event-move-preview'} aria-label={eventMove.preview.mode === 'resize' ? '종료 시간 조절 미리보기' : '일정 이동 미리보기'} data-date={day.date} data-move-start={eventMove.preview.mode === 'move' ? eventMove.preview.start : undefined} data-move-end={eventMove.preview.mode === 'move' ? eventMove.preview.end : undefined} data-resize-start={eventMove.preview.mode === 'resize' ? eventMove.preview.start : undefined} data-resize-end={eventMove.preview.mode === 'resize' ? eventMove.preview.end : undefined} style={{ top: eventMove.preview.start / 60 * HOUR_HEIGHT, height: (eventMove.preview.end - eventMove.preview.start) / 60 * HOUR_HEIGHT, '--selection-color': getCategory(eventMove.preview.event).color, '--selection-text': selectionTextColor(getCategory(eventMove.preview.event).color) } as CSSProperties}><div className={`cal-selection-preview-card ${eventMove.preview.start / 60 * HOUR_HEIGHT + 44 > gridHeight ? 'cal-selection-preview-bottom' : ''}`}><strong>{eventMove.preview.event.title}</strong><span>{formatSelectionTimeRange(eventMove.preview.start, eventMove.preview.end)}</span></div></div>}
                   </div>
                 );
               })}

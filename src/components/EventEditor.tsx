@@ -5,21 +5,30 @@ import type { CustomRecurrence, EventCategory, RecurrenceMode, ScheduleEvent } f
 import { minutesToTime, parseDate, timeToMinutes } from '../lib/planner';
 import { createCustomRecurrence, getRecurrenceSummary, validateCustomRecurrence } from '../lib/recurrence';
 import { isSubjectCategory } from '../lib/subjects';
+import type { EventMoveTarget } from '../lib/calendar-event-move';
 import Modal from './Modal';
 import CategoryCreator from './CategoryCreator';
 import CustomRecurrenceDialog from './CustomRecurrenceDialog';
 import './event-editor.css';
 
 export type EventEditScope = 'single' | 'all';
+export type EventTimingAction = 'move' | 'resize';
 
-interface Props { event?: ScheduleEvent; date: string; time?: string; endTime?: string; categories: EventCategory[]; subjects: string[]; onAddCategory: (category: EventCategory) => string | null; onSave: (event: ScheduleEvent, scope: EventEditScope) => string | null; onDelete: (id: string, scope: EventEditScope) => string | null; onClose: () => void }
+interface Props { event?: ScheduleEvent; date: string; time?: string; endTime?: string; moveTarget?: EventMoveTarget; timingAction?: EventTimingAction; categories: EventCategory[]; subjects: string[]; onAddCategory: (category: EventCategory) => string | null; onSave: (event: ScheduleEvent, scope: EventEditScope) => string | null; onDelete: (id: string, scope: EventEditScope) => string | null; onClose: () => void }
 
-export default function EventEditor({ event, date, time = '09:00', endTime, categories, subjects, onAddCategory, onSave, onDelete, onClose }: Props) {
+export default function EventEditor({ event, date, time = '09:00', endTime, moveTarget, timingAction = 'move', categories, subjects, onAddCategory, onSave, onDelete, onClose }: Props) {
   const isRepeatingEvent = !!event && event.recurrence !== 'none';
-  const [draft, setDraft] = useState<ScheduleEvent>(() => event ? { ...event, date: isRepeatingEvent ? date : event.date } : { id: crypto.randomUUID(), title: '', type: categories[0]?.id ?? '', date, startTime: time, endTime: endTime ?? minutesToTime(Math.min(timeToMinutes(time) + 60, 1440)), allDay: false, recurrence: 'none', weekdays: [parseDate(date).getDay()] });
+  const [draft, setDraft] = useState<ScheduleEvent>(() => event ? { ...event, date: isRepeatingEvent ? date : event.date, ...moveTarget } : { id: crypto.randomUUID(), title: '', type: categories[0]?.id ?? '', date, startTime: time, endTime: endTime ?? minutesToTime(Math.min(timeToMinutes(time) + 60, 1440)), allDay: false, recurrence: 'none', weekdays: [parseDate(date).getDay()] });
   const [scope, setScope] = useState<EventEditScope>(isRepeatingEvent ? 'single' : 'all');
-  const scopeDates = useRef({ single: date, all: event?.date ?? date });
+  const scopeDates = useRef({ single: moveTarget?.date ?? date, all: event?.date ?? date });
   const singleOccurrence = isRepeatingEvent && scope === 'single';
+  const timingHint = timingAction === 'resize'
+    ? singleOccurrence
+      ? `${date} 일정의 날짜와 시작 시간은 유지하고 종료 시간만 변경해요. 저장하면 반복에서 분리되어 이후 전체 반복 변경에 포함되지 않아요.`
+      : '전체 반복은 기존 날짜·시작 시간·반복 설정을 유지하고 종료 시간만 변경해요. 다른 항목도 아래에서 직접 바꿀 수 있어요.'
+    : singleOccurrence
+      ? `${date}의 일정을 선택한 날짜와 시간으로 옮겨요. 저장하면 반복에서 분리되어 이후 전체 반복 변경에 포함되지 않아요.`
+      : '전체 반복은 기존 시작일·반복 요일·종료 조건을 유지하고 시간만 옮겨요. 날짜와 반복 설정은 아래에서 직접 바꿀 수 있어요.';
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [addingCategory, setAddingCategory] = useState(categories.length === 0);
@@ -92,6 +101,7 @@ export default function EventEditor({ event, date, time = '09:00', endTime, cate
     <form onSubmit={submit}>
       <div className="modal-body form-stack">
         {isRepeatingEvent && <fieldset className="field event-edit-scope"><legend>적용 범위</legend><div className="event-scope-options"><label><input type="radio" name="event-edit-scope" checked={scope === 'single'} onChange={() => changeScope('single')} />이 일정만</label><label><input type="radio" name="event-edit-scope" checked={scope === 'all'} onChange={() => changeScope('all')} />전체 반복 일정</label></div><p className="form-hint">{singleOccurrence ? `${date} 일정만 변경해요. 수정하면 반복에서 분리된 개별 일정으로 저장되고, 삭제하면 이 날짜만 제외돼요.` : '남아 있는 전체 반복에 적용해요. 이미 개별 일정으로 분리한 내용은 그대로 유지돼요.'}</p></fieldset>}
+        {moveTarget && <p className="form-hint" role="status">{timingHint} 저장 전까지 일정은 변경되지 않아요.</p>}
         <label className="field">일정 이름<input className="input" autoFocus required maxLength={80} placeholder="예: 학교 수업, 수학 학원" value={draft.title} onChange={e => update('title', e.target.value)} /></label>
         <fieldset className="field"><legend>일정 종류</legend>{categories.length === 0 && <p className="form-hint">등록된 일정 종류가 없어요. 아래에서 종류를 먼저 추가해 주세요.</p>}<div className="type-options" ref={categoryChoices}>{categories.map(category => {
           const subjectCategory = isSubjectCategory(category, subjects);
